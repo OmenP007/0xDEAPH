@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Conception sécurisée des clés API pour le backend 0xSeq.">
+    <title>Clés API | 0xSeq</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #17231f;
+            --muted: #5d6b65;
+            --paper: #f5f7f4;
+            --surface: #ffffff;
+            --line: #d8e0da;
+            --green: #176b52;
+            --green-soft: #e7f2ed;
+            --coral: #b84c38;
+            --code: #16231f;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--paper);
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 17px;
+            line-height: 1.7;
+        }
+
+        a { color: var(--green); }
+
+        .masthead {
+            padding: 18px max(24px, calc((100% - 1100px) / 2));
+            color: #f5f7f4;
+            background: #173c31;
+            font: 700 13px/1.2 "Trebuchet MS", sans-serif;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 230px minmax(0, 760px);
+            gap: 56px;
+            width: min(1100px, calc(100% - 48px));
+            margin: 0 auto;
+            padding: 64px 0 96px;
+            align-items: start;
+        }
+
+        nav {
+            position: sticky;
+            top: 24px;
+            padding: 20px 0;
+            border-top: 3px solid var(--green);
+            font: 14px/1.5 "Trebuchet MS", sans-serif;
+        }
+
+        nav strong {
+            display: block;
+            margin-bottom: 12px;
+            color: var(--muted);
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        nav a {
+            display: block;
+            padding: 6px 0;
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        nav a:hover { color: var(--coral); }
+
+        main { min-width: 0; }
+
+        .eyebrow {
+            margin: 0 0 12px;
+            color: var(--coral);
+            font: 700 12px/1.3 "Trebuchet MS", sans-serif;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        h1, h2, h3 {
+            font-family: "Trebuchet MS", Arial, sans-serif;
+            line-height: 1.2;
+        }
+
+        h1 {
+            max-width: 700px;
+            margin: 0;
+            font-size: 48px;
+            letter-spacing: 0;
+        }
+
+        .intro {
+            margin: 22px 0 28px;
+            color: var(--muted);
+            font-size: 20px;
+        }
+
+        .download {
+            display: inline-block;
+            padding: 9px 13px;
+            border: 1px solid var(--green);
+            border-radius: 4px;
+            font: 700 13px/1.4 "Trebuchet MS", sans-serif;
+            text-decoration: none;
+        }
+
+        .notice {
+            margin: 30px 0 44px;
+            padding: 16px 20px;
+            border-left: 4px solid var(--coral);
+            background: var(--surface);
+        }
+
+        .notice strong { color: var(--coral); }
+
+        section {
+            padding: 30px 0 34px;
+            border-top: 1px solid var(--line);
+            scroll-margin-top: 24px;
+        }
+
+        h2 {
+            margin: 0 0 18px;
+            font-size: 27px;
+        }
+
+        h3 {
+            margin: 26px 0 10px;
+            font-size: 19px;
+        }
+
+        p { margin: 12px 0; }
+
+        li { padding-left: 4px; }
+
+        li + li { margin-top: 7px; }
+
+        code, pre { font-family: "DejaVu Sans Mono", Consolas, monospace; }
+
+        :not(pre) > code {
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: var(--green-soft);
+            font-size: 0.88em;
+            overflow-wrap: anywhere;
+        }
+
+        pre {
+            overflow-x: auto;
+            margin: 18px 0;
+            padding: 18px 20px;
+            border-radius: 4px;
+            color: #edf5f0;
+            background: var(--code);
+            font-size: 13px;
+            line-height: 1.65;
+            tab-size: 4;
+        }
+
+        .steps { padding-left: 24px; }
+
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0 32px;
+            padding-left: 21px;
+        }
+
+        footer {
+            padding-top: 22px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        @media (max-width: 760px) {
+            .layout {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 30px;
+                width: min(100% - 36px, 680px);
+                padding-top: 38px;
+            }
+
+            nav {
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0 16px;
+            }
+
+            nav strong { grid-column: 1 / -1; }
+
+            h1 { font-size: 38px; }
+
+            .feature-list { grid-template-columns: minmax(0, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <header class="masthead">0xSeq <span aria-hidden="true">/</span> Documentation technique</header>
+    <div class="layout">
+        <nav aria-label="Sommaire">
+            <strong>Dans ce guide</strong>
+            <a href="#cycle">Cycle de vie</a>
+            <a href="#modele">Modèle Django</a>
+            <a href="#secret">Stockage du secret</a>
+            <a href="#requete">Appels API</a>
+            <a href="#permissions">Permissions</a>
+            <a href="#securite">Gestion et sécurité</a>
+            <a href="#architecture">Architecture 0xSeq</a>
+            <a href="#implementation">Ordre d'implémentation</a>
+        </nav>
+
+        <main>
+            <header>
+                <p class="eyebrow">Conception backend</p>
+                <h1>Clés API pour 0xSeq</h1>
+                <p class="intro">Permettre aux développeurs d'intégrer 0xSeq avec des clés secrètes révocables, limitées et stockées correctement.</p>
+                <a class="download" href="../../docs/future_update.md">Lire la version Markdown</a>
+            </header>
+
+            <aside class="notice">
+                <strong>Contexte 0xSeq.</strong> Le projet utilise déjà JWT avec l'en-tête <code>Authorization: Bearer</code>. Ce guide utilise donc <code>X-API-Key</code> pour éviter toute confusion entre les deux mécanismes.
+            </aside>
+
+            <section id="cycle">
+                <h2>1. Cycle de vie d'une clé</h2>
+                <ol class="steps">
+                    <li>Le développeur se connecte à 0xSeq.</li>
+                    <li>Il demande une clé et lui donne un nom, par exemple <code>Application mobile</code>.</li>
+                    <li>Le serveur génère un secret avec un générateur cryptographiquement sûr.</li>
+                    <li>Le serveur enregistre le propriétaire, le nom, les permissions et l'empreinte du secret, jamais le secret en clair.</li>
+                    <li>La clé complète est renvoyée une seule fois. Le développeur la conserve dans un gestionnaire de secrets.</li>
+                    <li>À chaque appel, le serveur retrouve la clé, vérifie son état et applique ses permissions.</li>
+                </ol>
+                <p>Exemple de clé affichée une seule fois :</p>
+                <pre><code>0xs_live_k3H...secret...</code></pre>
+            </section>
+
+            <section id="modele">
+                <h2>2. Modèle Django</h2>
+                <p>Cette structure de départ associe chaque clé à son propriétaire, ses permissions et ses dates de cycle de vie.</p>
+                <pre><code>import secrets
+
+from django.conf import settings
+from django.db import models
+
+
+class APIKey(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="api_keys",
+    )
+    name = models.CharField(max_length=100)
+    prefix = models.CharField(max_length=20, db_index=True)
+    key_hash = models.CharField(max_length=64, unique=True)
+    scopes = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    @staticmethod
+    def generate_secret():
+        return "0xs_live_" + secrets.token_urlsafe(32)</code></pre>
+                <ul>
+                    <li><code>user</code> est le propriétaire de la clé.</li>
+                    <li><code>name</code> identifie l'intégration.</li>
+                    <li><code>prefix</code> aide à reconnaître la clé sans exposer le secret complet.</li>
+                    <li><code>key_hash</code> contient uniquement l'empreinte SHA-256.</li>
+                    <li><code>scopes</code> liste les actions permises, comme <code>payments:read</code>.</li>
+                    <li><code>revoked_at</code> non nul signifie que la clé a été révoquée.</li>
+                </ul>
+                <p>Le modèle seul ne suffit pas : il faudra aussi implémenter la création, l'authentification, les permissions et les tests. Tout changement de modèle devra être suivi d'une migration Django.</p>
+            </section>
+
+            <section id="secret">
+                <h2>3. Générer et stocker le secret</h2>
+                <p>Python fournit le module <code>secrets</code> pour créer des valeurs imprévisibles. À la création, on peut enregistrer l'empreinte et renvoyer le secret complet une seule fois :</p>
+                <pre><code>import hashlib
+
+raw_key = APIKey.generate_secret()
+key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+api_key = APIKey.objects.create(
+    user=request.user,
+    name=name,
+    prefix=raw_key[:20],
+    key_hash=key_hash,
+    scopes=["payments:read"],
+)
+
+# Renvoyer raw_key au développeur une seule fois.</code></pre>
+                <p>Une clé générée aléatoirement avec suffisamment d'entropie n'est pas un mot de passe humain : SHA-256 convient pour retrouver son empreinte. Il ne faut jamais journaliser ou réafficher le secret complet.</p>
+            </section>
+
+            <section id="requete">
+                <h2>4. Envoyer une clé dans une requête</h2>
+                <p>Une application cliente transmet sa clé dans un en-tête dédié :</p>
+                <pre><code>GET /api/payments/
+X-API-Key: 0xs_live_VOTRE_CLE</code></pre>
+                <p>Le backend lit l'en-tête, calcule l'empreinte, recherche la clé, vérifie qu'elle n'est ni révoquée ni expirée, contrôle le scope et le droit d'accès à la ressource, puis autorise ou refuse la requête.</p>
+                <p>Dans ce projet, JWT est déjà configuré sur <code>Authorization: Bearer</code>. Une classe d'authentification personnalisée pourrait distinguer les clés <code>0xs_live_...</code> des JWT si elles partageaient cet en-tête. <code>X-API-Key</code> évite cette ambiguïté.</p>
+            </section>
+
+            <section id="permissions">
+                <h2>5. Clés, scopes et paiements</h2>
+                <p>Une clé reçoit uniquement les permissions nécessaires :</p>
+                <ul>
+                    <li><code>payments:read</code> : consulter les paiements autorisés;</li>
+                    <li><code>payments:create</code> : créer une demande de paiement;</li>
+                    <li><code>payments:refund</code> : demander un remboursement, si les règles métier l'autorisent.</li>
+                </ul>
+                <p>Une clé en lecture seule ne doit pas pouvoir créer un paiement ni libérer des fonds. Même avec un scope valide, le serveur doit vérifier que le propriétaire de la clé peut accéder au paiement. Une clé API identifie une intégration; elle ne remplace ni la propriété ni les permissions métier.</p>
+                <p>Pour 0xSeq, il faudra définir quel compte est associé à une clé et à quel titre il peut initier un paiement. Une requête authentifiée n'a pas automatiquement le droit d'agir comme acheteur ou vendeur.</p>
+            </section>
+
+            <section id="securite">
+                <h2>6. Gestion et sécurité</h2>
+                <ul class="feature-list">
+                    <li>Créer et nommer plusieurs clés.</li>
+                    <li>Afficher le secret complet une seule fois.</li>
+                    <li>Révoquer immédiatement une clé.</li>
+                    <li>Limiter chaque clé à des scopes nécessaires.</li>
+                    <li>Configurer une date d'expiration.</li>
+                    <li>Suivre la dernière utilisation.</li>
+                    <li>Limiter le débit et journaliser sans secret.</li>
+                    <li>Empêcher un utilisateur de gérer les clés d'un autre.</li>
+                </ul>
+                <p>En production, toutes les requêtes doivent passer par HTTPS. Le secret ne doit jamais être stocké dans le code source, envoyé dans une URL ou écrit dans les journaux.</p>
+            </section>
+
+            <section id="architecture">
+                <h2>7. Architecture conseillée pour 0xSeq</h2>
+                <p>Le besoin décrit ici est de permettre aux développeurs d'intégrer <strong>l'API de 0xSeq</strong>. 0xSeq crée et gère donc les clés des intégrations de ses utilisateurs.</p>
+                <p>C'est différent d'une plateforme où les développeurs utiliseraient 0xSeq pour créer et gérer des clés destinées à leurs propres projets. Cette seconde architecture ferait de 0xSeq un service de gestion de clés.</p>
+                <ul>
+                    <li><code>User</code> représente le compte et le propriétaire.</li>
+                    <li><code>APIKey</code> authentifie une intégration et porte ses scopes.</li>
+                    <li><code>Paiement</code> représente l'opération financière et conserve ses règles d'accès et de transition d'état.</li>
+                </ul>
+            </section>
+
+            <section id="implementation">
+                <h2>8. Ordre d'implémentation</h2>
+                <ol class="steps">
+                    <li>Ajouter le modèle <code>APIKey</code>.</li>
+                    <li>Créer puis appliquer la migration.</li>
+                    <li>Créer une API qui affiche le secret une seule fois.</li>
+                    <li>Ajouter une classe d'authentification DRF pour <code>X-API-Key</code>.</li>
+                    <li>Vérifier les scopes et le propriétaire des paiements dans les permissions.</li>
+                    <li>Ajouter la révocation, l'expiration, les tests et la limitation du débit.</li>
+                </ol>
+                <p>Teste cette fonctionnalité avant de protéger des opérations financières réelles. Une clé API ne déplace pas d'argent et ne doit jamais contourner les autorisations du modèle <code>Paiement</code>.</p>
+            </section>
+
+            <footer>
+                Guide de conception pour 0xSeq. Les exemples illustrent une architecture et doivent être complétés par des tests et des règles métier avant tout usage en production.
+            </footer>
+        </main>
+    </div>
+</body>
+</html>
