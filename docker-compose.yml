@@ -1,0 +1,158 @@
+version: '3.8'
+
+# ==============================================================================
+# 0xSeq • Architecture de Déploiement Production & Automatisation
+# Services : Django Gunicorn, Celery Worker, Celery Beat, Redis 7, Nginx SSL
+# Base de données active : SQLite3 (persistance locale sur le volume hôte)
+# Base de données PostgreSQL 16 : définie et prête à être activée (profil postgres)
+# ==============================================================================
+
+services:
+  # ─── 1. Cache & Courtier Celery (Redis 7) ──────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: 0xseq_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - 0xseq_network
+
+  # ─── 2. Application Django Backend (Gunicorn) ──────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 0xseq_web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DB_ENGINE=sqlite3
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      # Persistance de la base de données SQLite3
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./data:/app/data
+      # Fichiers statiques et médias
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    expose:
+      - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - 0xseq_network
+
+  # ─── 3. Worker Celery (Tâches asynchrones) ───────────────────────────────────
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 0xseq_celery_worker
+    restart: unless-stopped
+    command: celery -A config worker --loglevel=info -c 4
+    env_file:
+      - .env
+    environment:
+      - DB_ENGINE=sqlite3
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      # Même volume SQLite pour lecture/écriture du statut des transactions
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./data:/app/data
+      - media_volume:/app/media
+    depends_on:
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+    networks:
+      - 0xseq_network
+
+  # ─── 4. Scheduler Celery Beat (Auto-Release toutes les 15 min) ─────────────
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 0xseq_celery_beat
+    restart: unless-stopped
+    command: celery -A config beat --loglevel=info --schedule=/app/data/celerybeat-schedule
+    env_file:
+      - .env
+    environment:
+      - DB_ENGINE=sqlite3
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+    networks:
+      - 0xseq_network
+
+  # ─── 5. Serveur Web & Reverse Proxy (Nginx + SSL) ───────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: 0xseq_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+      - certbot_etc:/etc/letsencrypt
+      - certbot_var:/var/www/certbot
+    depends_on:
+      - web
+    networks:
+      - 0xseq_network
+
+  # ─── 6. Base PostgreSQL 16 (Optionnelle pour bascule ultérieure) ───────────
+  # Pour démarrer avec PostgreSQL : docker compose --profile postgres up -d
+  # et passer DB_ENGINE=postgresql dans votre fichier .env
+  postgres:
+    image: postgres:16-alpine
+    container_name: 0xseq_postgres
+    restart: unless-stopped
+    profiles:
+      - postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-0xseq_db}
+      POSTGRES_USER: ${POSTGRES_USER:-0xseq_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - 0xseq_network
+
+networks:
+  0xseq_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  static_volume:
+  media_volume:
+  certbot_etc:
+  certbot_var:
+  postgres_data:

@@ -1,2 +1,55 @@
-/venv
+# Environnements virtuels
+/venv/
+.venv/
+env/
+
+# Variables d'environnement & Secrets
 .env
+.env.local
+.env.*.local
+*.env
+
+# Sauf les exemples de configuration
+!.env.example
+!.env.production.example
+
+# Bytecode Python & caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Bases de données locales
+db.sqlite3
+*.sqlite3
+*.db
+datadump.json
+
+# Fichiers statiques et médias
+staticfiles/
+media/
+data/
+
+# Celery & Scheduler
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+
+# Logs applicatifs
+*.log
+logs/
+
+# Certificats SSL / Let's Encrypt
+certbot_etc/
+certbot_var/
+*.pem
+*.key
+*.crt
+
+# Fichiers IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

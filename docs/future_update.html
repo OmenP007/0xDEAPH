@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Feuille de route technique et prochaines évolutions pour la plateforme de séquestre 0xSeq.">
+    <title>Feuille de Route & Évolutions Futures | 0xSeq</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #17231f;
+            --muted: #5d6b65;
+            --paper: #f5f7f4;
+            --surface: #ffffff;
+            --line: #d8e0da;
+            --green: #176b52;
+            --green-dark: #114a38;
+            --green-soft: #e7f2ed;
+            --coral: #b84c38;
+            --coral-soft: #fdf2f0;
+            --amber: #b45309;
+            --amber-soft: #fef3c7;
+            --blue: #0284c7;
+            --blue-soft: #e0f2fe;
+            --code-bg: #1c2a26;
+            --code-fg: #dbeef3;
+            --badge-done: #15803d;
+            --badge-todo: #0284c7;
+            --badge-phase: #854d0e;
+        }
+
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--paper);
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 17px;
+            line-height: 1.7;
+        }
+
+        a { color: var(--green); text-decoration: underline; }
+        a:hover { color: var(--coral); }
+
+        .masthead {
+            padding: 16px max(24px, calc((100% - 1100px) / 2));
+            color: #f5f7f4;
+            background: #173c31;
+            font: 700 13px/1.2 "Trebuchet MS", sans-serif;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .masthead-title {
+            text-transform: uppercase;
+        }
+
+        .masthead-links a {
+            color: #e7f2ed;
+            margin-left: 20px;
+            text-decoration: none;
+            font-size: 12px;
+        }
+
+        .masthead-links a:hover {
+            color: #ffffff;
+            text-decoration: underline;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 240px minmax(0, 780px);
+            gap: 56px;
+            width: min(1120px, calc(100% - 48px));
+            margin: 0 auto;
+            padding: 64px 0 96px;
+            align-items: start;
+        }
+
+        nav {
+            position: sticky;
+            top: 24px;
+            padding: 20px 0;
+            border-top: 3px solid var(--green);
+            font: 14px/1.5 "Trebuchet MS", sans-serif;
+        }
+
+        nav strong {
+            display: block;
+            margin-bottom: 12px;
+            color: var(--muted);
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        nav a {
+            display: block;
+            padding: 6px 0;
+            color: var(--ink);
+            text-decoration: none;
+            border-radius: 4px;
+        }
+
+        nav a:hover {
+            color: var(--coral);
+            padding-left: 4px;
+            transition: all 0.15s ease-in-out;
+        }
+
+        main { min-width: 0; }
+
+        .eyebrow {
+            margin: 0 0 12px;
+            color: var(--coral);
+            font: 700 12px/1.3 "Trebuchet MS", sans-serif;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: "Trebuchet MS", Arial, sans-serif;
+            line-height: 1.25;
+            color: #12211c;
+        }
+
+        h1 {
+            margin: 0 0 16px;
+            font-size: 42px;
+        }
+
+        h2 {
+            margin: 48px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--line);
+            font-size: 26px;
+            scroll-margin-top: 24px;
+        }
+
+        h3 {
+            margin: 28px 0 10px;
+            font-size: 20px;
+        }
+
+        p, ul, ol {
+            margin: 0 0 18px;
+        }
+
+        .lead {
+            font-size: 20px;
+            color: var(--muted);
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 9px;
+            font-family: "Trebuchet MS", sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            border-radius: 4px;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-done { background: #dcfce7; color: var(--badge-done); }
+        .badge-todo { background: var(--blue-soft); color: var(--badge-todo); }
+        .badge-phase { background: var(--amber-soft); color: var(--badge-phase); }
+
+        .notice {
+            margin: 24px 0;
+            padding: 16px 20px;
+            border-left: 4px solid var(--coral);
+            background: var(--coral-soft);
+            border-radius: 0 6px 6px 0;
+            font-size: 16px;
+        }
+
+        .notice-info {
+            border-left-color: var(--blue);
+            background: var(--blue-soft);
+        }
+
+        .notice-success {
+            border-left-color: var(--green);
+            background: var(--green-soft);
+        }
+
+        .notice-warning {
+            border-left-color: var(--amber);
+            background: var(--amber-soft);
+        }
+
+        .notice strong { color: #12211c; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 15px;
+            background: var(--surface);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+        }
+
+        th, td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid var(--line);
+            font-family: "Trebuchet MS", sans-serif;
+        }
+
+        th {
+            background: #f1f5f2;
+            font-weight: 700;
+            color: var(--ink);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        code, pre {
+            font-family: "DejaVu Sans Mono", Consolas, monospace;
+        }
+
+        :not(pre) > code {
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: var(--green-soft);
+            color: var(--green-dark);
+            font-size: 0.88em;
+            overflow-wrap: anywhere;
+        }
+
+        pre {
+            background: var(--code-bg);
+            color: var(--code-fg);
+            padding: 18px 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.6;
+            margin: 18px 0;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .checklist {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .checklist li {
+            position: relative;
+            padding-left: 28px;
+            margin-bottom: 10px;
+        }
+
+        .checklist li.checked::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--badge-done);
+            font-weight: bold;
+            font-size: 18px;
+            line-height: 1.4;
+        }
+
+        .checklist li.pending::before {
+            content: "○";
+            position: absolute;
+            left: 0;
+            color: var(--blue);
+            font-weight: bold;
+            font-size: 16px;
+            line-height: 1.4;
+        }
+
+        footer {
+            margin-top: 60px;
+            padding-top: 24px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-family: "Trebuchet MS", sans-serif;
+            font-size: 13px;
+            text-align: center;
+        }
+
+        @media (max-width: 800px) {
+            .layout {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 32px;
+                padding-top: 36px;
+            }
+            nav {
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 6px 16px;
+            }
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="masthead">
+        <span class="masthead-title">0xSeq • Roadmap & Architecture Future</span>
+        <div class="masthead-links">
+            <a href="index.html">← Documentation API</a>
+            <a href="/api/schema/swagger/">Swagger</a>
+            <a href="/api/schema/redoc/">ReDoc</a>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside>
+            <nav aria-label="Sommaire">
+                <strong>Sommaire</strong>
+                <a href="#etat-actuel">1. Acquis & État Actuel</a>
+                <a href="#celery">2. Automatisation (Celery)</a>
+                <a href="#notifications">3. Alertes SMS & WhatsApp</a>
+                <a href="#frontend">4. Interfaces & Portails UI</a>
+                <a href="#outbound-webhooks">5. Webhooks Marchands</a>
+                <a href="#devops">6. DevOps & Production</a>
+                <a href="#checklist">7. Checklist de Déploiement</a>
+            </nav>
+        </aside>
+
+        <main>
+            <header>
+                <p class="eyebrow">Vision Technique & Évolutions</p>
+                <h1>Feuille de Route 0xSeq</h1>
+                <p class="lead">Ce document détaille les briques validées de la plateforme de séquestre en <strong>FCFA (XOF)</strong> ainsi que les spécifications techniques pour son industrialisation en production.</p>
+            </header>
+
+            <!-- SECTION 1: ACQUIS & ETAT ACTUEL -->
+            <section id="etat-actuel">
+                <h2>1. Briques Fondamentales Réalisées & Validées</h2>
+                <p>Le socle backend de 0xSeq est opérationnel, sécurisé et couvert par une suite complète de <strong>33 tests automatisés</strong>. Voici les piliers déjà implémentés :</p>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 style="margin:0;">Séquestre & Commission</h3>
+                            <span class="badge badge-done">Validé</span>
+                        </div>
+                        <p style="font-size:15px; margin-bottom:0;">Calcul strict au franc près en <strong>FCFA (XOF)</strong>. Prélèvement automatique de la commission de <strong>1.00%</strong> (<code>commission_rate = 0.0100</code>). Traçabilité complète du montant brut, de la commission plateforme et du montant net vendeur.</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 style="margin:0;">Timer de Libération (3j)</h3>
+                            <span class="badge badge-done">Validé</span>
+                        </div>
+                        <p style="font-size:15px; margin-bottom:0;">Attribution automatique du timestamp <code>auto_release_at = now + 3 jours</code> dès confirmation du blocage des fonds. Mécanisme de déblocage automatique avec annulation instantanée en cas de litige.</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 style="margin:0;">Module KYC Multi-Documents</h3>
+                            <span class="badge badge-done">Validé</span>
+                        </div>
+                        <p style="font-size:15px; margin-bottom:0;">Soumission de pièces d'identité (CNI, Passeport, Permis). Workflow complet pour les utilisateurs (<code>PENDING</code>) et révision administrative (<code>APPROVED</code>, <code>REJECTED</code> avec motif).</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 style="margin:0;">Litiges & Arbitrage</h3>
+                            <span class="badge badge-done">Validé</span>
+                        </div>
+                        <p style="font-size:15px; margin-bottom:0;">Ouverture de litige par l'acheteur verrouillant le paiement. Arbitrage administrateur avec résolution vers la libération des fonds (<code>release</code>) ou le remboursement (<code>refund</code>).</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 style="margin:0;">Webhooks GeniusPay & Clés API Développeur</h3>
+                        <span class="badge badge-done">Validé en Live</span>
+                    </div>
+                    <p>Le webhook d'entrée GeniusPay implémente la signature cryptographique exacte conforme aux standards de production :</p>
+                    <pre><code>// Signature HMAC SHA-256 GeniusPay vérifiée côté backend :
+$expected = hash_hmac('sha256', $timestamp . '.' . $payload, $secret);</code></pre>
+                    <p style="margin-bottom:0;">Les développeurs disposent d'un espace d'authentification par clé API (<code>X-API-Key: 0xs_live_...</code>) avec secret transmis une seule fois et empreinte SHA-256 isolée en base de données.</p>
+                </div>
+            </section>
+
+            <!-- SECTION 2: CELERY & AUTO-RELEASE AUTOMATION -->
+            <section id="celery">
+                <h2>2. Automatisation des Tâches d'Arrière-Plan (Celery, Redis & Idempotence)</h2>
+                
+                <div class="notice notice-success">
+                    <strong>Statut : Déployé & Opérationnel.</strong> Les tâches d'arrière-plan sont désormais découplées dans <code>escrow/tasks.py</code> et orchestrées par Celery Beat adossé à Redis.
+                </div>
+
+                <p>La libération automatique s'exécute périodiquement de manière complètement autonome, tolérante aux pannes avec retry exponentiel et suivi d'idempotence des webhooks.</p>
+
+                <h3>Configuration Celery Beat Active (<code>config/celery.py</code>)</h3>
+                <pre><code>app.conf.beat_schedule = {
+    # Auto-release automatique toutes les 15 minutes
+    'auto-release-expired-escrows-every-15m': {
+        'task': 'escrow.tasks.task_auto_release_expired_escrows',
+        'schedule': crontab(minute='*/15'),
+    },
+    # Nettoyage quotidien des journaux d'événements et d'idempotence
+    'purge-old-webhook-idempotency-daily': {
+        'task': 'escrow.tasks.task_purge_old_idempotency_logs',
+        'schedule': crontab(hour=3, minute=0),
+        'kwargs': {'days': 30},
+    },
+}</code></pre>
+
+                <h3>Gestion de l'Idempotence & Retries</h3>
+                <p>Chaque notification GeniusPay est désormais indexée dans le modèle <code>WebhookEventLog</code> via son identifiant unique (<code>id</code> / <code>event_id</code>). Tout doublon renvoyé par le fournisseur de paiement est détecté et ignoré sans effet de bord.</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tâche Celery</th>
+                            <th>Fréquence</th>
+                            <th>Résilience & Retries</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>task_auto_release_expired_escrows</code></td>
+                            <td>Toutes les 15 min</td>
+                            <td>3 retries automatiques (backoff exponentiel 60s, 120s, 240s)</td>
+                        </tr>
+                        <tr>
+                            <td><code>task_purge_old_idempotency_logs</code></td>
+                            <td>Tous les jours à 03h00 UTC</td>
+                            <td>Purge les événements de plus de 30 jours pour préserver l'espace disque</td>
+                        </tr>
+                        <tr>
+                            <td><code>task_release_single_escrow</code></td>
+                            <td>À la demande (asynchrone)</td>
+                            <td>Libération unitaire ciblée avec retry en cas d'indisponibilité GeniusPay</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+                            <td>Toutes les 15 minutes</td>
+                            <td>Libère les paiements <code>BLOCKED</code> dont <code>auto_release_at <= now()</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>task_send_escrow_warning_notifications</code></td>
+                            <td>Toutes les 6 heures</td>
+                            <td>Envoie une alerte aux acheteurs dont le séquestre expire dans 24h.</td>
+                        </tr>
+                        <tr>
+                            <td><code>task_clean_expired_idempotency_keys</code></td>
+                            <td>Tous les jours à 03h00</td>
+                            <td>Purger les journaux d'événements webhook archivés.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- SECTION 3: SMS & WHATSAPP NOTIFICATIONS -->
+            <section id="notifications">
+                <h2>3. Notifications Transactionnelles (SMS & WhatsApp)</h2>
+                <p>Dans l'écosystème du commerce en Afrique de l'Ouest et Centrale, les e-mails sont peu consultés par rapport aux messageries instantanées et aux SMS. Un système de notification multicanal est indispensable pour rassurer acheteurs et vendeurs.</p>
+
+                <h3>Fournisseurs d'Infrastructure Recommandés</h3>
+                <ul>
+                    <li><strong>WhatsApp Cloud API (Meta for Developers) :</strong> Canal prioritaire pour l'envoi de messages enrichis (boutons d'action, récapitulatif avec logo).</li>
+                    <li><strong>Termii :</strong> Passerelle SMS leader pour le Nigeria, la Côte d'Ivoire, le Sénégal et le Cameroun avec taux de délivrabilité supérieur à 98%.</li>
+                    <li><strong>Twilio :</strong> Canal de secours pour les numéros internationaux et fallback SMS.</li>
+                </ul>
+
+                <h3>Templates Transactionnels en FCFA</h3>
+                <div class="grid-2">
+                    <div class="card">
+                        <h4 style="margin-top:0; color:var(--green);">📲 Notification Vendeur (Dépôt Sécurisé)</h4>
+                        <p style="font-size:14px; font-style:italic; background:#f8faf8; padding:12px; border-radius:4px; border:1px solid #e2ebe4;">
+                            "0xSeq : L'acheteur a bloqué <strong>50 000 FCFA</strong> sous séquestre pour votre commande #CMD-842. Vous pouvez expédier le produit en toute sécurité. Délai de validation : 3 jours."
+                        </p>
+                    </div>
+                    <div class="card">
+                        <h4 style="margin-top:0; color:var(--blue);">📦 Notification Acheteur (Rappel de Séquestre)</h4>
+                        <p style="font-size:14px; font-style:italic; background:#f8faf8; padding:12px; border-radius:4px; border:1px solid #e2ebe4;">
+                            "0xSeq : Avez-vous reçu votre commande #CMD-842 ? Rendez-vous sur votre espace pour libérer les fonds ou déclarer un litige. Sans action, libération sous 24h."
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <h4 style="margin-top:0; color:var(--green-dark);">💰 Notification Vendeur (Libération des Fonds)</h4>
+                        <p style="font-size:14px; font-style:italic; background:#f8faf8; padding:12px; border-radius:4px; border:1px solid #e2ebe4;">
+                            "0xSeq : Félicitations ! Les fonds ont été libérés. <strong>49 500 FCFA</strong> ont été transférés sur votre solde disponible (Commission 0xSeq 1% : 500 FCFA)."
+                        </p>
+                    </div>
+                    <div class="card">
+                        <h4 style="margin-top:0; color:var(--coral);">⚠️ Alerte Partagée (Ouverture de Litige)</h4>
+                        <p style="font-size:14px; font-style:italic; background:#fdf2f0; padding:12px; border-radius:4px; border:1px solid #fed7d7;">
+                            "0xSeq : Un litige a été ouvert pour la commande #CMD-842. La libération automatique des fonds est immédiatement suspendue. Notre équipe examine le dossier."
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 4: FRONTEND & PORTALS -->
+            <section id="frontend">
+                <h2>4. Architecture Frontend & Interfaces Utilisateur</h2>
+                <p>Le backend fournissant une API REST complète, l'architecture cible s'articulera autour de trois expériences web/mobiles découplées (développées en <strong>React/Next.js</strong> ou <strong>Vue.js/Nuxt</strong>) :</p>
+
+                <div class="card">
+                    <h3>1. Portail Acheteur (Mobile-First / PWA)</h3>
+                    <p>Accessible sans inscription préalable fastidieuse via un lien sécurisé à usage unique ou OTP envoyé par SMS/WhatsApp dès l'initiation du paiement :</p>
+                    <ul>
+                        <li>Affichage clair du montant bloqué en <strong>FCFA</strong> et de l'identité du vendeur certifié KYC.</li>
+                        <li><strong>Compte à rebours dynamique</strong> des 3 jours restant avant libération automatique.</li>
+                        <li><strong>Bouton d'action principal :</strong> « Confirmer la réception du produit & Libérer les fonds ».</li>
+                        <li><strong>Bouton d'arbitrage :</strong> « Signaler un problème / Ouvrir un litige » avec envoi de photos justificatives.</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>2. Tableau de Bord Vendeur (Merchant Dashboard)</h3>
+                    <p>Espace professionnel dédié au suivi des ventes et à la trésorerie :</p>
+                    <ul>
+                        <li><strong>Vue financière en temps réel :</strong> Solde sous séquestre, solde disponible, total des commissions 0xSeq (1%) acquittées.</li>
+                        <li><strong>Gestion des expéditions :</strong> Saisie du numéro de suivi colis ou du transporteur partenaire.</li>
+                        <li><strong>Module de Retrait (Cashout) :</strong> Demande de versement direct vers Mobile Money (Orange Money, Wave, MTN MoMo) ou virement bancaire local.</li>
+                        <li><strong>Gestion de conformité :</strong> Suivi du statut KYC et mise à jour des justificatifs.</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>3. Portail Développeur & Simulateur Sandbox</h3>
+                    <p>Pour les équipes techniques intégrant le séquestre sur leurs plateformes e-commerce :</p>
+                    <ul>
+                        <li>Génération, régénération et révocation instantanée des clés API (<code>0xs_live_...</code>).</li>
+                        <li>Journal en direct des requêtes API (temps de réponse, code HTTP, corps de requête).</li>
+                        <li><strong>Simulateur de Webhook :</strong> Bouton permettant de tester la réception d'événements vers son serveur local (ex: via ngrok).</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- SECTION 5: OUTBOUND WEBHOOKS -->
+            <section id="outbound-webhooks">
+                <h2>5. Webhooks Sortants pour Sites Marchands (Outbound Webhooks)</h2>
+                <p>Pour permettre l'intégration transparente sur des CMS tiers (WooCommerce, Shopify, Prestashop, plateformes SaaS sur-mesure), 0xSeq doit pouvoir notifier le serveur du marchand de manière asynchrone lors des événements clés.</p>
+
+                <h3>Spécification de Sécurité des Webhooks Sortants</h3>
+                <p>Chaque requête sortante envoyée par 0xSeq contiendra les en-têtes d'authentification suivants :</p>
+                <pre><code>POST https://boutique-marchand.com/api/0xseq-webhook/
+Content-Type: application/json
+X-0xSeq-Signature: 8d9f4c3...hmac_sha256...
+X-0xSeq-Timestamp: 1729548000
+X-0xSeq-Event: payment.released
+
+{
+    "event": "payment.released",
+    "timestamp": 1729548000,
+    "data": {
+        "id": "c7f9919b-6fc2-482d-88b8-b80c3eb9e211",
+        "reference": "CMD-2026-XOF-991",
+        "amount": "150000.00",
+        "currency": "XOF",
+        "fee_amount": "1500.00",
+        "net_amount": "148500.00",
+        "status": "RELEASED",
+        "released_at": "2026-10-21T21:40:00Z"
+    }
+}</code></pre>
+
+                <div class="notice notice-warning">
+                    <strong>Politique de Re-tentative (Exponential Backoff) :</strong>
+                    En cas de non-réponse ou d'erreur HTTP (code != 2xx) de la part du marchand, 0xSeq effectuera 5 tentatives espacées de 1 min, 5 min, 30 min, 2 h et 12 h.
+                </div>
+            </section>
+
+            <!-- SECTION 6: DEVOPS & PRODUCTION -->
+            <section id="devops">
+                <h2>6. Déploiement & DevOps Production (Docker & SQLite)</h2>
+                <div class="notice notice-success">
+                    <strong>Architecture Active :</strong> Déploiement conteneurisé avec persistance de <strong>SQLite3</strong> (via volume hôte <code>./db.sqlite3</code>), <strong>Redis 7</strong>, <strong>Django Gunicorn</strong>, <strong>Celery Worker</strong>, <strong>Celery Beat</strong> et <strong>Nginx Reverse Proxy SSL</strong>.
+                </div>
+
+                <p>La stack est configurée pour fonctionner immédiatement sur SQLite sans complexité superflue, tout en incluant le service PostgreSQL 16 désactivé (profil <code>postgres</code>) prêt à être activé quand le trafic augmentera.</p>
+
+                <h3>Structure du Déploiement <code>docker-compose.yml</code></h3>
+                <pre><code>services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes: [redis_data:/data]
+
+  web:
+    build: .
+    container_name: 0xseq_web
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    env_file: [.env]
+    environment:
+      - DB_ENGINE=sqlite3
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+      - static_volume:/app/staticfiles
+
+  celery_worker:
+    build: .
+    command: celery -A config worker --loglevel=info -c 4
+    depends_on: [redis, web]
+
+  celery_beat:
+    build: .
+    command: celery -A config beat --loglevel=info
+    depends_on: [redis, web]
+
+  nginx:
+    image: nginx:alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - static_volume:/app/staticfiles:ro</code></pre>
+            </section>
+
+            <!-- SECTION 7: CHECKLIST -->
+            <section id="checklist">
+                <h2>7. Checklist Finale Avant Passage en Production (Live)</h2>
+                <p>Suivez rigoureusement cette liste de contrôle disponible également dans <a href="../docs/checklist_production.md">checklist_production.md</a> :</p>
+
+                <ul class="checklist">
+                    <li class="checked">Vérification de la conformité de la devise <strong>FCFA (XOF)</strong> et précision des commissions (1%).</li>
+                    <li class="checked">Intégration validée du webhook GeniusPay avec vérification HMAC SHA-256.</li>
+                    <li class="checked">Gestion de l'idempotence (<code>WebhookEventLog</code>) pour éviter tout double débit/crédit.</li>
+                    <li class="checked">Scheduler Celery Beat configuré pour l'auto-release automatique toutes les 15 minutes.</li>
+                    <li class="checked">Stack <code>docker-compose.yml</code> complète (Gunicorn, Celery, Redis, Nginx, SQLite).</li>
+                    <li class="checked">Audit de sécurité & Pentest OWASP complété (<a href="../docs/security_audit.md">security_audit.md</a>) : Verrouillage pessimiste atomique, Anti-Replay Webhooks, Headers stricts (CSP, HSTS).</li>
+                    <li class="checked">Suite complète de tests unitaires et d'intégration validée (35/35 tests).</li>
+                    <li class="pending">Génération d'une <code>SECRET_KEY</code> de production longue et aléatoire.</li>
+                    <li class="pending">Bascule de <code>GENIUS_PAY_SANDBOX=False</code> et saisie des clés réelles (<code>pk_live_...</code>, <code>sk_live_...</code>, <code>whsec_...</code>).</li>
+                    <li class="pending">Configuration du nom de domaine et du certificat SSL via Certbot Let's Encrypt sur Nginx.</li>
+                    <li class="pending">Branchement du monitoring Sentry via <code>SENTRY_DSN</code> pour la détection proactive des erreurs 500.</li>
+                </ul>
+            </section>
+
+            <footer>
+                Document technique interne & feuille de route • <strong>0xSeq</strong> © 2026. Tous droits réservés.
+            </footer>
+        </main>
+    </div>
+</body>
+</html>

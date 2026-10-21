@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Documentation officielle de l'API 0xSeq — Système de paiement sous séquestre sécurisé.">
+    <title>Documentation Officielle | 0xSeq</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #17231f;
+            --muted: #5d6b65;
+            --paper: #f5f7f4;
+            --surface: #ffffff;
+            --line: #d8e0da;
+            --green: #176b52;
+            --green-soft: #e7f2ed;
+            --coral: #b84c38;
+            --code-bg: #1c2a26;
+            --code-fg: #dbeef3;
+            --badge-get: #0e7090;
+            --badge-post: #15803d;
+            --badge-delete: #b91c1c;
+        }
+
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--paper);
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 17px;
+            line-height: 1.7;
+        }
+
+        a { color: var(--green); text-decoration: underline; }
+        a:hover { color: var(--coral); }
+
+        .masthead {
+            padding: 16px max(24px, calc((100% - 1100px) / 2));
+            color: #f5f7f4;
+            background: #173c31;
+            font: 700 13px/1.2 "Trebuchet MS", sans-serif;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .masthead-title {
+            text-transform: uppercase;
+        }
+
+        .masthead-links a {
+            color: #e7f2ed;
+            margin-left: 20px;
+            text-decoration: none;
+            font-size: 12px;
+        }
+
+        .masthead-links a:hover {
+            color: #ffffff;
+            text-decoration: underline;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 240px minmax(0, 780px);
+            gap: 56px;
+            width: min(1120px, calc(100% - 48px));
+            margin: 0 auto;
+            padding: 64px 0 96px;
+            align-items: start;
+        }
+
+        nav {
+            position: sticky;
+            top: 24px;
+            padding: 20px 0;
+            border-top: 3px solid var(--green);
+            font: 14px/1.5 "Trebuchet MS", sans-serif;
+        }
+
+        nav strong {
+            display: block;
+            margin-bottom: 12px;
+            color: var(--muted);
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        nav a {
+            display: block;
+            padding: 6px 0;
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        nav a:hover { color: var(--coral); }
+
+        main { min-width: 0; }
+
+        .eyebrow {
+            margin: 0 0 12px;
+            color: var(--coral);
+            font: 700 12px/1.3 "Trebuchet MS", sans-serif;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: "Trebuchet MS", Arial, sans-serif;
+            line-height: 1.25;
+            color: #12211c;
+        }
+
+        h1 {
+            margin: 0 0 16px;
+            font-size: 44px;
+        }
+
+        h2 {
+            margin: 48px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--line);
+            font-size: 26px;
+        }
+
+        h3 {
+            margin: 32px 0 12px;
+            font-size: 20px;
+        }
+
+        p, ul, ol {
+            margin: 0 0 18px;
+        }
+
+        .lead {
+            font-size: 20px;
+            color: var(--muted);
+            margin-bottom: 32px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        .state-flow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 20px 0;
+            padding: 16px;
+            background: var(--green-soft);
+            border-radius: 6px;
+            font-family: "Trebuchet MS", sans-serif;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .state-item {
+            padding: 8px 14px;
+            border-radius: 4px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+        }
+
+        .state-arrow {
+            color: var(--green);
+            font-size: 18px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-family: "Trebuchet MS", sans-serif;
+            font-size: 14px;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            text-align: left;
+        }
+
+        th {
+            background: var(--green-soft);
+            color: var(--green);
+            font-weight: 700;
+        }
+
+        tr:nth-child(even) td {
+            background: #fafbf9;
+        }
+
+        .method {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #ffffff;
+            font-family: monospace;
+        }
+
+        .method.get { background: var(--badge-get); }
+        .method.post { background: var(--badge-post); }
+        .method.delete { background: var(--badge-delete); }
+
+        pre {
+            background: var(--code-bg);
+            color: var(--code-fg);
+            padding: 16px 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            margin: 18px 0;
+        }
+
+        code {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 0.9em;
+            background: #e9eee9;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        .note {
+            padding: 16px 20px;
+            border-left: 4px solid var(--green);
+            background: var(--green-soft);
+            margin: 20px 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .note strong {
+            color: var(--green);
+            display: block;
+            margin-bottom: 4px;
+            font-family: "Trebuchet MS", sans-serif;
+        }
+
+        @media (max-width: 860px) {
+            .layout {
+                grid-template-columns: 1fr;
+                gap: 32px;
+                padding-top: 32px;
+            }
+            nav {
+                position: static;
+                border-top: none;
+                border-bottom: 2px solid var(--green);
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="masthead">
+        <span class="masthead-title">0xSeq • Plateforme Sécurisée de Séquestre</span>
+        <div class="masthead-links">
+            <a href="/api/schema/swagger/">Swagger UI</a>
+            <a href="/api/schema/redoc/">ReDoc</a>
+            <a href="future_update.html">Roadmap & Futur</a>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside>
+            <nav>
+                <strong>Sommaire</strong>
+                <a href="#apercu">1. Vue d'ensemble</a>
+                <a href="#cycle-sequestre">2. Cycle de Séquestre</a>
+                <a href="#roles">3. Rôles & Comptes</a>
+                <a href="#auth-client">4. Authentification Clients</a>
+                <a href="#auth-dev">5. Espace Développeurs</a>
+                <a href="#endpoints-paiements">6. API des Paiements</a>
+                <a href="#webhooks">7. Webhooks GeniusPay</a>
+                <a href="#api-keys">8. Clés API & Intégration</a>
+                <a href="#interactive-docs">9. Swagger & OpenAPI</a>
+            </nav>
+        </aside>
+
+        <main>
+            <p class="eyebrow">Documentation Backend & Intégration</p>
+            <h1>API 0xSeq (0xEscrow)</h1>
+            <p class="lead">
+                0xSeq est un service de paiement sous séquestre (escrow) automatisé, sécurisé et interopérable, propulsé par Django REST Framework et connecté au processeur de paiement <strong>GeniusPay</strong> (Mobile Money & Cartes bancaires).
+            </p>
+
+            <!-- 1. Aperçu -->
+            <section id="apercu">
+                <h2>1. Vue d'ensemble</h2>
+                <p>
+                    L'objectif de 0xSeq est d'offrir une garantie mutuelle lors des transactions en ligne : l'acheteur consigne ses fonds dans un compte sécurisé (séquestre) et le vendeur expédie le produit ou service avec la certitude que l'argent est disponible. Une fois la prestation vérifiée et validée, les fonds sont libérés vers le vendeur.
+                </p>
+                <div class="card">
+                    <h4 style="margin-top:0;">Points clés de l'architecture :</h4>
+                    <ul>
+                        <li><strong>Contrôle d'accès strict :</strong> Gestion des rôles différenciés (Acheteur, Vendeur, Développeur, Administrateur).</li>
+                        <li><strong>Machine à états financière :</strong> Transitions d'états vérifiées et protégées contre les fraudes et doubles dépenses.</li>
+                        <li><strong>Intégration GeniusPay en temps réel :</strong> Écoute des webhooks signés cryptographiquement en HMAC SHA-256.</li>
+                        <li><strong>Écosystème Développeur :</strong> Clés API sécurisées par hachage SHA-256 et authentification JWT isolée.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- 2. Cycle de vie -->
+            <section id="cycle-sequestre">
+                <h2>2. Cycle de Vie d'un Séquestre</h2>
+                <p>Chaque paiement sous séquestre transite selon un automate d'états immuable :</p>
+                
+                <div class="state-flow">
+                    <span class="state-item">CREATED (Initié)</span>
+                    <span class="state-arrow">➔</span>
+                    <span class="state-item">BLOCKED (Fonds sous séquestre)</span>
+                    <span class="state-arrow">➔</span>
+                    <span class="state-item">RELEASED (Libéré au vendeur)</span>
+                </div>
+                <p style="text-align: center; font-size: 14px; color: var(--muted); margin-top: -10px;">
+                    <em>ou</em> <code>BLOCKED</code> ➔ <strong>REFUNDED (Remboursé à l'acheteur)</strong> en cas de litige résolu par un administrateur.
+                </p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Statut</th>
+                            <th>Description</th>
+                            <th>Action déclenchante</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>CREATED</code></td>
+                            <td>Transaction initialisée par le client, en attente de versement.</td>
+                            <td><code>POST /api/payments/</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>BLOCKED</code></td>
+                            <td>Fonds déposés et gelés sur le compte séquestre de GeniusPay.</td>
+                            <td>Webhook GeniusPay <code>payment.success</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>RELEASED</code></td>
+                            <td>Prestation validée, argent transféré au vendeur.</td>
+                            <td><code>POST /api/payments/{id}/release/</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>REFUNDED</code></td>
+                            <td>Commande annulée ou litige résolu, fonds renvoyés au client.</td>
+                            <td><code>POST /api/payments/{id}/refund/</code> (Admin)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- 3. Rôles -->
+            <section id="roles">
+                <h2>3. Rôles & Permissions</h2>
+                <p>Le modèle utilisateur gère les types de profils suivants :</p>
+                <ul>
+                    <li><code>client</code> : Acheteur pouvant initier des paiements et libérer les fonds après livraison.</li>
+                    <li><code>seller</code> : Vendeur pouvant être désigné comme bénéficiaire d'une transaction.</li>
+                    <li><code>developer</code> : Développeur intégrant l'API 0xSeq, habilité à gérer ses clés d'API.</li>
+                    <li><code>deaph</code> : Administrateur système disposant des droits de litige et de remboursement.</li>
+                </ul>
+            </section>
+
+            <!-- 4. Authentification Clients -->
+            <section id="auth-client">
+                <h2>4. Authentification Clients & Vendeurs</h2>
+                <p>L'authentification s'effectue via des jetons <strong>JWT (JSON Web Tokens)</strong> avec l'en-tête standard <code>Authorization: Bearer &lt;access_token&gt;</code>.</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Méthode</th>
+                            <th>Route</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/register/</code></td>
+                            <td>Création d'un compte client ou vendeur (rôle standard).</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/token/</code></td>
+                            <td>Obtention d'une paire de jetons (access + refresh).</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/token/refresh/</code></td>
+                            <td>Renouvellement d'un token d'accès expiré.</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <pre><code># Connexion client
+curl -X POST http://127.0.0.1:8000/api/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "mon_client", "password": "mon_mot_de_passe"}'</code></pre>
+            </section>
+
+            <!-- 5. Espace Développeurs -->
+            <section id="auth-dev">
+                <h2>5. Espace Développeurs (Page Dédiée)</h2>
+                <p>
+                    Les développeurs disposent d'un portail et d'un flux d'authentification dédiés. Tout utilisateur standard (client ou vendeur) tentant de s'authentifier sur le portail développeur verra sa requête rejetée.
+                </p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Méthode</th>
+                            <th>Route</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/developer/register/</code></td>
+                            <td>Inscription développeur (attribue automatiquement le rôle <code>developer</code>).</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/developer/token/</code></td>
+                            <td>Connexion JWT réservée aux comptes développeurs.</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="note">
+                    <strong>Sécurité Espace Développeur :</strong>
+                    L'endpoint <code>/api/developer/token/</code> valide automatiquement le rôle utilisateur en base. Si un compte client tente d'y accéder, l'API renvoie un code <code>400 Bad Request</code> avec le motif : <em>« Accès refusé : Ce compte n'est pas un compte développeur. »</em>
+                </div>
+            </section>
+
+            <!-- 6. API Paiements -->
+            <section id="endpoints-paiements">
+                <h2>6. Endpoints des Paiements</h2>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Méthode</th>
+                            <th>Route</th>
+                            <th>Accès</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="method get">GET</span></td>
+                            <td><code>/api/payments/</code></td>
+                            <td>Authentifié</td>
+                            <td>Liste des transactions impliquant l'utilisateur connecté.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/payments/</code></td>
+                            <td>Client</td>
+                            <td>Initialisation d'un séquestre vers un vendeur.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method get">GET</span></td>
+                            <td><code>/api/payments/{id}/</code></td>
+                            <td>Parties prenantes</td>
+                            <td>Détails complets d'un paiement sous séquestre.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/payments/{id}/release/</code></td>
+                            <td>Acheteur</td>
+                            <td>Déblocage des fonds vers le vendeur (statut <code>RELEASED</code>).</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/payments/{id}/refund/</code></td>
+                            <td>Admin</td>
+                            <td>Remboursement de l'acheteur en cas de litige (statut <code>REFUNDED</code>).</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Exemple : Créer un séquestre en FCFA (XOF)</h3>
+                <p>Pour une transaction de <strong>25 000 FCFA</strong>, 0xSeq retient automatiquement 1% de commission (<strong>250 FCFA</strong>) et le montant net alloué au vendeur est de <strong>24 750 FCFA</strong>.</p>
+                <pre><code>curl -X POST http://127.0.0.1:8000/api/payments/ \
+  -H "Authorization: Bearer VOTRE_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "seller": 2,
+    "amount": "25000.00"
+  }'</code></pre>
+            </section>
+
+            <!-- 7. Webhooks -->
+            <section id="webhooks">
+                <h2>7. Webhooks GeniusPay</h2>
+                <p>
+                    Le backend 0xSeq écoute les notifications instantanées émises par GeniusPay sur l'endpoint public suivant :
+                </p>
+                <p><code>POST /api/webhooks/geniuspay/</code></p>
+
+                <h3>Événements écoutés :</h3>
+                <ul>
+                    <li><code>payment.success</code> : Le client a réglé. Les fonds passent en <strong>BLOCKED</strong>.</li>
+                    <li><code>cashout.completed</code> : Le virement vers le vendeur a réussi. Le séquestre passe en <strong>RELEASED</strong>.</li>
+                    <li><code>payment.refunded</code> : Remboursement confirmé par GeniusPay. Statut <strong>REFUNDED</strong>.</li>
+                </ul>
+
+                <div class="note">
+                    <strong>Contrôle d'intégrité HMAC SHA-256 :</strong>
+                    Chaque requête webhook envoyée par GeniusPay doit inclure l'en-tête <code>X-GeniusPay-Signature</code> calculé à partir de la variable <code>GENIUS_PAY_WEBHOOK_SECRET</code>. Toute requête non authentique est automatiquement bloquée.
+                </div>
+            </section>
+
+            <!-- 8. Clés API -->
+            <section id="api-keys">
+                <h2>8. Clés d'API & En-tête X-API-Key</h2>
+                <p>
+                    Les développeurs connectés peuvent générer des identifiants d'API permanents afin d'intégrer 0xSeq directement dans leurs plateformes e-commerce ou applications tierces.
+                </p>
+                <div class="note">
+                    <strong>Authentification sans JWT :</strong>
+                    Les requêtes d'API externes peuvent être authentifiées directement avec l'en-tête HTTP :<br>
+                    <code>X-API-Key: 0xs_live_xxxxxxxxxxxxxxxxxxxxxxxx</code>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Méthode</th>
+                            <th>Route</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="method get">GET</span></td>
+                            <td><code>/api/keys/</code></td>
+                            <td>Liste des clés de l'application (le secret est masqué).</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/keys/</code></td>
+                            <td>Génération d'une nouvelle clé. <em>Le secret en clair n'est retourné qu'une seule fois.</em></td>
+                        </tr>
+                        <tr>
+                            <td><span class="method delete">DELETE</span></td>
+                            <td><code>/api/keys/{id}/revoke/</code></td>
+                            <td>Révocation immédiate d'une clé compromise.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- 9. Litiges & KYC -->
+            <section id="litiges-kyc">
+                <h2>9. Litiges & Vérification d'Identité (KYC)</h2>
+
+                <h3>Gestion des Litiges (Disputes)</h3>
+                <p>
+                    En cas de problème sur une transaction (colis non livré, produit endommagé), l'acheteur peut ouvrir un litige tant que les fonds sont <code>BLOCKED</code>. Cela gèle automatiquement le délai de séquestre de 3 jours.
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Méthode</th>
+                            <th>Route</th>
+                            <th>Accès</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/payments/{id}/dispute/</code></td>
+                            <td>Acheteur</td>
+                            <td>Déclaration d'un litige avec motif et détails.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method get">GET</span></td>
+                            <td><code>/api/disputes/{id}/</code></td>
+                            <td>Parties prenantes</td>
+                            <td>Consultation de l'état du litige.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/disputes/{id}/resolve/</code></td>
+                            <td>Admin</td>
+                            <td>Arbitrage administratif (libération vers le vendeur ou remboursement de l'acheteur).</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Module KYC (Know Your Customer)</h3>
+                <p>
+                    Pour se conformer aux exigences réglementaires et sécuriser les échanges, les utilisateurs peuvent soumettre leur pièce d'identité (CNI, Passeport, Permis).
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Méthode</th>
+                            <th>Route</th>
+                            <th>Accès</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="method get">GET</span> / <span class="method post">POST</span></td>
+                            <td><code>/api/kyc/</code></td>
+                            <td>Authentifié</td>
+                            <td>Consultation du statut ou soumission du dossier KYC.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="method post">POST</span></td>
+                            <td><code>/api/kyc/{id}/review/</code></td>
+                            <td>Admin</td>
+                            <td>Validation (<code>APPROVED</code>) ou rejet motivé (<code>REJECTED</code>).</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- 10. Docs Interactives -->
+            <section id="interactive-docs">
+                <h2>10. Documentation Interactive & Spécifications</h2>
+                <p>L'API 0xSeq intègre la spécification OpenAPI 3.0 via <code>drf-spectacular</code> :</p>
+                <ul>
+                    <li><a href="/api/schema/swagger/" target="_blank"><strong>Swagger UI</strong> (Interface interactive pour tester les requêtes)</a></li>
+                    <li><a href="/api/schema/redoc/" target="_blank"><strong>ReDoc</strong> (Interface de référence technique)</a></li>
+                    <li><a href="/api/schema/" target="_blank"><strong>Schéma OpenAPI brut (YAML)</strong></a></li>
+                </ul>
+            </section>
+        </main>
+    </div>
+</body>
+</html>
