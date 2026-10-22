@@ -12,7 +12,11 @@ from .views import (
     HealthView,
     KYCReviewView,
     KYCView,
+    OfferCheckoutView,
+    OfferListCreateView,
+    OfferPublicDetailView,
     PaiementAutoReleaseView,
+    PaiementConfirmDeliveryView,
     PaiementDetailView,
     PaiementDisputeView,
     PaiementListCreateView,
@@ -39,13 +43,19 @@ urlpatterns = [
     path("api/developer/register/",   DeveloperRegisterView.as_view(),         name="developer-register"),
     path("api/developer/token/",      DeveloperTokenObtainPairView.as_view(),  name="developer-token"),
 
+    # ── Offres & Liens de Paiement (Paylinks) ─────────────────────────────────
+    path("api/offers/",                         OfferListCreateView.as_view(),         name="offer-list-create"),
+    path("api/offers/<str:code>/",              OfferPublicDetailView.as_view(),       name="offer-public-detail"),
+    path("api/offers/<str:code>/checkout/",     OfferCheckoutView.as_view(),           name="offer-checkout"),
+
     # ── Paiements ─────────────────────────────────────────────────────────────
-    path("api/payments/",             PaiementListCreateView.as_view(), name="payment-list-create"),
-    path("api/payments/<int:pk>/",    PaiementDetailView.as_view(),     name="payment-detail"),
-    path("api/payments/<int:pk>/release/", PaiementReleaseView.as_view(),  name="payment-release"),
-    path("api/payments/<int:pk>/refund/",  PaiementRefundView.as_view(),   name="payment-refund"),
-    path("api/payments/<int:pk>/dispute/", PaiementDisputeView.as_view(),  name="payment-dispute"),
-    path("api/payments/auto-release/",     PaiementAutoReleaseView.as_view(), name="payment-auto-release"),
+    path("api/payments/",                       PaiementListCreateView.as_view(),      name="payment-list-create"),
+    path("api/payments/<int:pk>/",              PaiementDetailView.as_view(),          name="payment-detail"),
+    path("api/payments/<int:pk>/release/",      PaiementReleaseView.as_view(),         name="payment-release"),
+    path("api/payments/<int:pk>/refund/",       PaiementRefundView.as_view(),          name="payment-refund"),
+    path("api/payments/<int:pk>/dispute/",      PaiementDisputeView.as_view(),         name="payment-dispute"),
+    path("api/payments/<int:pk>/confirm-delivery/", PaiementConfirmDeliveryView.as_view(), name="payment-confirm-delivery"),
+    path("api/payments/auto-release/",          PaiementAutoReleaseView.as_view(),     name="payment-auto-release"),
 
     # ── Litiges (Arbitrage) ───────────────────────────────────────────────────
     path("api/disputes/<int:pk>/",         DisputeDetailResolveView.as_view(), name="dispute-detail"),

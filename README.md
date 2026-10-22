@@ -5,7 +5,7 @@
 [![Celery](https://img.shields.io/badge/Celery-5.6-37814A?style=for-the-badge&logo=celery&logoColor=white)](https://docs.celeryq.dev/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Tests-35%2F35%20Passing-success?style=for-the-badge)](https://github.com/)
+[![Tests](https://img.shields.io/badge/Tests-46%2F46%20Passing-success?style=for-the-badge)](https://github.com/)
 
 **0xSeq** est une infrastructure backend de paiement avec **séquestre (escrow) automatisé, sécurisé et interopérable**, conçue pour l'écosystème e-commerce et les transactions peer-to-peer en **FCFA (XOF)**. 
 
@@ -21,29 +21,37 @@ Elle garantit la confiance mutuelle entre acheteurs et vendeurs en séquestrant 
 - **Worker Celery Beat :** Déblocage automatique exécuté toutes les 15 minutes sans intervention humaine (`task_auto_release_expired_escrows`).
 - **Verrouillage Pessimiste Atomique :** Protection anti-concurrence (`select_for_update()`) empêchant les doubles déblocages et les race conditions.
 
-### 2. Modèle Économique & Commissions en FCFA
+### 2. Architecture Bidirectionnelle & Liens de Paiement (Paylinks)
+- **Initiateur flexible :** Les transactions peuvent être initiées soit par l'acheteur, soit directement par le vendeur via une offre.
+- **Paylinks Vendeur (Social Commerce) :** Génération de références uniques et opaques (`OFF-XXXX-XXXX`) prêtes à être partagées sur WhatsApp, Facebook Marketplace, TikTok ou Instagram.
+- **Zéro risque d'erreur de destinataire :** L'acheteur ne saisit aucun numéro de compte ou de téléphone Mobile Money. Le backend Django rattache automatiquement le paiement au vendeur vérifié associé à l'offre.
+- **Instantané Immuable (Price & Terms Snapshot) :** Le titre, la description et le prix en FCFA sont figés dans `Paiement` au moment de la commande pour empêcher toute falsification ultérieure par le vendeur.
+- **Badge de Confiance KYC Public :** La consultation publique d'un Paylink (`GET /api/offers/{code}/`) expose le statut KYC vérifié du vendeur sans authentification préalable.
+- **Validation de Livraison Sécurisée (OTP Livreur) :** Génération d'un code secret à 6 chiffres (`delivery_otp`) transmis à l'acheteur. La libération des fonds s'opère soit directement par l'acheteur, soit par le vendeur/livreur indépendant saisissant ce code OTP.
+
+### 3. Modèle Économique & Commissions en FCFA
 - **Devise officielle :** FCFA (code standard `XOF` / zone UEMOA).
 - **Commission 0xSeq de 1% :** Prélèvement automatique de 1.00% par transaction (`fee_amount = amount * 0.01`).
 - **Net Vendeur :** Montant net calculé au franc près (`net_amount = amount - fee_amount`).
 - *Exemple :* Pour un achat de **100 000 FCFA**, les frais s'élèvent à **1 000 FCFA** et le vendeur perçoit **99 000 FCFA**.
 
-### 3. Module KYC (Know Your Customer)
+### 4. Module KYC (Know Your Customer)
 - **Multi-documents :** CNI, Passeport, Permis de conduire (`POST /api/kyc/`).
 - **Workflow de conformité :** `NONE` ➔ `PENDING` ➔ `APPROVED` ou `REJECTED` motivé.
 - **Validation administrative :** Endpoint dédié pour validation par les administrateurs (`POST /api/kyc/{id}/review/`).
 
-### 4. Gestion Complète des Litiges (Disputes)
+### 5. Gestion Complète des Litiges (Disputes)
 - **Ouverture de litige :** L'acheteur peut signaler un litige (`POST /api/payments/{id}/dispute/`) lorsque les fonds sont bloqués.
 - **Gel conservatoire :** Annulation immédiate du compte à rebours d'auto-release.
 - **Arbitrage Administrateur :** Décision souveraine (`POST /api/disputes/{id}/resolve/`) vers la libération au vendeur (`release`) ou le remboursement intégral à l'acheteur (`refund`).
 
-### 5. Passerelle GeniusPay & Webhooks Sécurisés
+### 6. Passerelle GeniusPay & Webhooks Sécurisés
 - **Initiation de séquestre :** Synchronisation directe avec l'API Merchant GeniusPay.
 - **Validation cryptographique HMAC SHA-256 :** Vérification stricte de l'en-tête `X-Webhook-Signature` (`hash_hmac('sha256', $timestamp . '.' . $payload, $secret)`).
 - **Protection Anti-Replay :** Validation temporelle de l'en-tête `X-Webhook-Timestamp` (fenêtre max de 5 min).
 - **Gestion de l'Idempotence :** Modèle `WebhookEventLog` indexant les `event_id` pour ignorer les doublons sans effet de bord.
 
-### 6. Portail Développeurs & Clés API
+### 7. Portail Développeurs & Clés API
 - **Espace Développeur Dédié :** Inscription (`/api/developer/register/`) et authentification JWT séparée (`/api/developer/token/`).
 - **Clés API Sécurisées :** Préfixe en clair (`0xs_live_...`), secret affiché une seule fois et empreinte SHA-256 stockée en base.
 - **En-tête `X-API-Key` :** Permet aux sites e-commerce externes d'appeler l'API sans passer par JWT.
@@ -149,11 +157,15 @@ Consultez le guide [docs/checklist_production.md](docs/checklist_production.md) 
 | `/api/token/refresh/` | `POST` | Public | Rafraîchissement de token JWT |
 | `/api/developer/register/` | `POST` | Public | Inscription espace développeur |
 | `/api/developer/token/` | `POST` | Public | Connexion JWT développeur |
+| `/api/offers/` | `GET` / `POST` | Vendeur | Liste et création d'offres de vente (Paylinks `OFF-XXXX`) |
+| `/api/offers/{code}/` | `GET` | Public | Consultation publique d'un Paylink avec badge KYC vendeur |
+| `/api/offers/{code}/checkout/` | `POST` | Acheteur | Commande directe sur Paylink (instantané immuable + séquestre) |
 | `/api/payments/` | `GET` / `POST` | Client / Vendeur | Liste et création de séquestre (commission 1% FCFA) |
 | `/api/payments/{id}/` | `GET` | Parties prenantes | Consultation détaillée d'un séquestre |
 | `/api/payments/{id}/release/` | `POST` | Acheteur | Libération des fonds au vendeur (verrouillé atomiquement) |
 | `/api/payments/{id}/refund/` | `POST` | Administrateur | Remboursement de l'acheteur |
 | `/api/payments/{id}/dispute/` | `POST` | Acheteur | Ouverture d'un litige suspendant le timer |
+| `/api/payments/{id}/confirm-delivery/` | `POST` | Acheteur / Livreur | Confirmation de livraison physique (directe ou via OTP 6 chiffres) |
 | `/api/payments/auto-release/` | `POST` | Administrateur | Déclencheur manuel du déblocage des séquestres > 3j |
 | `/api/disputes/{id}/resolve/` | `POST` | Administrateur | Arbitrage souverain du litige (`release` ou `refund`) |
 | `/api/kyc/` | `GET` / `POST` | Authentifié | Consultation et soumission de pièce d'identité |
@@ -174,14 +186,14 @@ Consultez le guide [docs/checklist_production.md](docs/checklist_production.md) 
 
 ## 🧪 Tests Automatisés
 
-Le projet comprend une suite complète de **35 tests d'intégration et unitaires**, couvrant la totalité des flux critiques :
+Le projet comprend une suite complète de **46 tests d'intégration et unitaires**, couvrant la totalité des flux critiques (authentification, séquestres, litiges, auto-release, webhooks, paylinks, snapshots et OTP) :
 
 ```bash
 python manage.py test escrow
 ```
 
 ```text
-Ran 35 tests in 64.7s
+Ran 46 tests in 89.1s
 OK
 Destroying test database for alias 'default'...
 ```

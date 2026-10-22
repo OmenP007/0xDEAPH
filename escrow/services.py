@@ -259,43 +259,47 @@ class GeniusPayService:
             logger.warning("Paiement introuvable pour webhook : %s (escrow_id=%s, ref=%s)", event, escrow_id, reference)
             return True, f"Événement '{event}' reçu mais paiement introuvable."
 
-        # Si l'escrow_id n'était pas encore enregistré, on l'associe
-        if escrow_id and not paiement.escrow_id:
-            paiement.escrow_id = escrow_id
-            paiement.save(update_fields=["escrow_id"])
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            paiement = Paiement.objects.select_for_update().get(pk=paiement.pk)
 
-        # Traitement selon l'événement
-        if event == "payment.success":
-            # Le client a payé -> les fonds sont bloqués sous séquestre
-            if paiement.status == "CREATED" or paiement.can_transition_to("BLOCKED"):
-                paiement.status = "BLOCKED"
-                paiement.save()
-                return True, f"Paiement #{paiement.pk} passé au statut BLOCKED."
-            return True, f"Paiement #{paiement.pk} déjà en statut {paiement.status}."
+            # Si l'escrow_id n'était pas encore enregistré, on l'associe
+            if escrow_id and not paiement.escrow_id:
+                paiement.escrow_id = escrow_id
+                paiement.save(update_fields=["escrow_id"])
 
-        elif event == "cashout.completed":
-            # Les fonds ont été virés avec succès au vendeur
-            if paiement.status == "BLOCKED" or paiement.can_transition_to("RELEASED"):
-                paiement.status = "RELEASED"
-                paiement.save()
-                return True, f"Paiement #{paiement.pk} passé au statut RELEASED."
-            return True, f"Paiement #{paiement.pk} statut actuel: {paiement.status}."
+            # Traitement selon l'événement
+            if event == "payment.success":
+                # Le client a payé -> les fonds sont bloqués sous séquestre
+                if paiement.status == "CREATED" or paiement.can_transition_to("BLOCKED"):
+                    paiement.status = "BLOCKED"
+                    paiement.save()
+                    return True, f"Paiement #{paiement.pk} passé au statut BLOCKED."
+                return True, f"Paiement #{paiement.pk} déjà en statut {paiement.status}."
 
-        elif event == "payment.refunded":
-            # Remboursement confirmé
-            if paiement.status in ("CREATED", "BLOCKED") or paiement.can_transition_to("REFUNDED"):
-                paiement.status = "REFUNDED"
-                paiement.save()
-                return True, f"Paiement #{paiement.pk} passé au statut REFUNDED."
-            return True, f"Paiement #{paiement.pk} statut actuel: {paiement.status}."
+            elif event == "cashout.completed":
+                # Les fonds ont été virés avec succès au vendeur
+                if paiement.status == "BLOCKED" or paiement.can_transition_to("RELEASED"):
+                    paiement.status = "RELEASED"
+                    paiement.save()
+                    return True, f"Paiement #{paiement.pk} passé au statut RELEASED."
+                return True, f"Paiement #{paiement.pk} statut actuel: {paiement.status}."
 
-        elif event in ("payment.failed", "payment.cancelled", "payment.expired"):
-            logger.warning("GeniusPay paiement #{%s} a échoué/annulé/expiré: %s", paiement.pk, event)
-            return True, f"Paiement #{paiement.pk} notification échec reçue ({event})."
+            elif event == "payment.refunded":
+                # Remboursement confirmé
+                if paiement.status in ("CREATED", "BLOCKED") or paiement.can_transition_to("REFUNDED"):
+                    paiement.status = "REFUNDED"
+                    paiement.save()
+                    return True, f"Paiement #{paiement.pk} passé au statut REFUNDED."
+                return True, f"Paiement #{paiement.pk} statut actuel: {paiement.status}."
 
-        elif event in ("payment.initiated", "cashout.requested", "cashout.approved", "cashout.failed"):
-            logger.info("GeniusPay statut étape paiement #{%s}: %s", paiement.pk, event)
-            return True, f"Événement {event} pris en compte."
+            elif event in ("payment.failed", "payment.cancelled", "payment.expired"):
+                logger.warning("GeniusPay paiement #{%s} a échoué/annulé/expiré: %s", paiement.pk, event)
+                return True, f"Paiement #{paiement.pk} notification échec reçue ({event})."
+
+            elif event in ("payment.initiated", "cashout.requested", "cashout.approved", "cashout.failed"):
+                logger.info("GeniusPay statut étape paiement #{%s}: %s", paiement.pk, event)
+                return True, f"Événement {event} pris en compte."
 
         return True, f"Événement {event} non géré."
 
@@ -306,35 +310,48 @@ def auto_release_expired_escrows() -> list[int]:
     """
     Libère automatiquement tous les paiements sous séquestre ayant dépassé le délai de 3 jours
     sans litige ouvert (tâche planifiable via Celery ou Cron).
+    Sécurisé avec verrouillage pessimiste atomique (select_for_update).
     """
+    from django.db import transaction as db_transaction
     from django.utils import timezone
     from .models import Paiement
 
     now = timezone.now()
-    expired = Paiement.objects.filter(
-        status="BLOCKED",
-        auto_release_at__isnull=False,
-        auto_release_at__lte=now,
+    expired_ids = list(
+        Paiement.objects.filter(
+            status="BLOCKED",
+            auto_release_at__isnull=False,
+            auto_release_at__lte=now,
+        ).values_list("pk", flat=True)
     )
 
     released_ids = []
     service = GeniusPayService()
 
-    for p in expired:
-        # Sécurité : Si un litige est ouvert ou en révision, ne jamais libérer automatiquement
-        if hasattr(p, "dispute") and p.dispute.status in ["OPEN", "UNDER_REVIEW"]:
-            logger.warning("Paiement #%s suspendu : litige actif présent (%s).", p.pk, p.dispute.status)
-            continue
+    for pk in expired_ids:
+        with db_transaction.atomic():
+            try:
+                p_locked = Paiement.objects.select_for_update().get(pk=pk)
+            except Paiement.DoesNotExist:
+                continue
 
-        try:
-            if p.escrow_id:
-                service.release_funds(p.escrow_id)
-        except GeniusPayError as exc:
-            logger.error("Auto-release GeniusPay échoué pour paiement #%s : %s", p.pk, exc)
+            if p_locked.status != "BLOCKED":
+                continue
 
-        p.status = "RELEASED"
-        p.save()
-        released_ids.append(p.pk)
-        logger.info("Auto-release réussi pour le paiement #%s (délai 3 jours écoulé)", p.pk)
+            # Sécurité : Si un litige est ouvert ou en révision, ne jamais libérer automatiquement
+            if hasattr(p_locked, "dispute") and p_locked.dispute.status in ["OPEN", "UNDER_REVIEW"]:
+                logger.warning("Paiement #%s suspendu : litige actif présent (%s).", p_locked.pk, p_locked.dispute.status)
+                continue
+
+            try:
+                if p_locked.escrow_id:
+                    service.release_funds(p_locked.escrow_id)
+            except GeniusPayError as exc:
+                logger.error("Auto-release GeniusPay échoué pour paiement #%s : %s", p_locked.pk, exc)
+
+            p_locked.status = "RELEASED"
+            p_locked.save(update_fields=["status", "updated_at"])
+            released_ids.append(p_locked.pk)
+            logger.info("Auto-release réussi pour le paiement #%s (délai 3 jours écoulé)", p_locked.pk)
 
     return released_ids

@@ -1,9 +1,9 @@
 # Rapport d'Audit de Sécurité & Pentest • 0xSeq Escrow Platform
 
-**Date :** 21 Octobre 2026  
+**Date :** 22 Octobre 2026  
 **Auditeur :** Antigravity Security Team (Posture Pentester / Red & Blue Team)  
-**Périmètre :** Backend Django, Django REST Framework, Webhooks GeniusPay, Tâches Celery, Base de données SQLite3, Conteneurisation Docker & Nginx.  
-**Statut Global :** ✅ **SÉCURISÉ & CONFORME PRODUCTION** (35/35 Tests Unitaires & d'Intégration Validés).
+**Périmètre :** Backend Django, DRF, Webhooks GeniusPay, Tâches Celery, Base de données SQLite3, Conteneurisation Docker & Nginx, Architecture Paylinks & OTP de livraison.  
+**Statut Global :** ✅ **SÉCURISÉ & CONFORME PRODUCTION** (46/46 Tests Unitaires & d'Intégration Validés).
 
 ---
 
@@ -11,7 +11,7 @@
 
 Une évaluation approfondie de la surface d'attaque du projet **0xSeq** a été menée selon les standards **OWASP Top 10 (2021)** et **OWASP API Security Top 10 (2023)**. 
 
-Huit vecteurs de vulnérabilités potentielles ont été identifiés, analysés, corrigés et validés par des tests automatisés :
+Quatorze vecteurs de vulnérabilités potentielles ont été audités, corrigés et validés par des tests automatisés :
 
 | Réf | Catégorie de Risque | Gravité Initiale | Statut | Solution Appliquée |
 | :--- | :--- | :---: | :---: | :--- |
@@ -23,6 +23,12 @@ Huit vecteurs de vulnérabilités potentielles ont été identifiés, analysés,
 | **SEC-06** | **Absence d'En-têtes de Sécurité HTTP** | **MOYENNE** | ✅ Corrigé | Middleware d'en-têtes stricts (`CSP`, `HSTS`, `X-Frame-Options: DENY`, `nosniff`). |
 | **SEC-07** | **Permissions de Fichiers & Fuite de Secrets** | **ÉLEVÉE** | ✅ Corrigé | Restriction `chmod 600` sur `.env` et `db.sqlite3`, durcissement de `.gitignore`. |
 | **SEC-08** | **Bypass de Signature Webhook en Production** | **CRITIQUE** | ✅ Corrigé | Blocage du serveur au démarrage si `GENIUS_PAY_WEBHOOK_SECRET` est absent en prod. |
+| **SEC-09** | **Exposition & Fuite du Code OTP Secret** (Fuite API & Logs) | **CRITIQUE** | ✅ Corrigé | Masquage de `delivery_otp` pour le vendeur/tiers (réservé acheteur), suppression des logs. |
+| **SEC-10** | **Clé Secrète Django par Défaut** (`django-insecure-...`) | **CRITIQUE** | ✅ Corrigé | Génération d'un secret aléatoire haute entropie (`secrets.token_urlsafe(64)`). |
+| **SEC-11** | **Race Condition sur Litiges & Paylinks** | **ÉLEVÉE** | ✅ Corrigé | Encapsulation de `PaiementDisputeView` et `OfferCheckoutView` sous `select_for_update()`. |
+| **SEC-12** | **Concurrence Auto-Release Celery & Webhooks** | **ÉLEVÉE** | ✅ Corrigé | Verrouillage transactionnel pessimiste par identifiant dans `auto_release_expired_escrows` et `handle_webhook_event`. |
+| **SEC-13** | **Élévation de Privilèges & Création d'Offres Sans Rôle** | **ÉLEVÉE** | ✅ Corrigé | Blocage du rôle `developer` à l'inscription publique, validation du rôle vendeur sur `/api/offers/`. |
+| **SEC-14** | **Attaque par Canal Auxiliaire (Timing Attack) sur OTP** | **MOYENNE** | ✅ Corrigé | Validation de livraison avec `secrets.compare_digest()` à temps constant et transport HTTPS strict. |
 
 ---
 
@@ -100,19 +106,72 @@ Huit vecteurs de vulnérabilités potentielles ont été identifiés, analysés,
 
 ---
 
+### 🔴 SEC-09 : Fuite & Exposition de l'OTP Secret de Livraison (API & Logs)
+* **Vecteur d'attaque :**
+  1. Le code `delivery_otp` (secret à 6 chiffres destiné uniquement à l'acheteur) figurait dans `read_only_fields` de `PaiementSerializer`, le rendant visible au vendeur et aux tiers via `GET /api/payments/` et `GET /api/payments/{id}/`.
+  2. L'OTP était consigné en clair dans les logs serveurs lors du checkout (`[Paylink] Achat initié... (OTP: XXXXXX)`).
+* **Correction implémentée :**
+  1. Dans `PaiementSerializer.to_representation()`, l'OTP est désormais **strictement masqué** pour tout utilisateur qui n'est pas l'acheteur de la transaction (`request.user != instance.buyer`).
+  2. Suppression immédiate de la variable `delivery_otp` de toutes les instructions `logger.info()`.
+
+---
+
+### 🔴 SEC-10 : Utilisation de la Clé Secrète Django par Défaut
+* **Vecteur d'attaque :** La clé `SECRET_KEY` dans `.env` débutait par le préfixe non sécurisé `django-insecure-`, exposant l'ensemble des sessions et tokens JWT signés.
+* **Correction implémentée :** Remplacement par un secret cryptographique généré aléatoirement de 64 octets en base64 URL-safe (`secrets.token_urlsafe(64)`).
+
+---
+
+### 🟠 SEC-11 : Concurrence sur Litiges & Paylinks (Double Vente & Double Litige)
+* **Vecteur d'attaque :**
+  1. L'ouverture de litige (`PaiementDisputeView`) s'exécutait hors transaction atomique, permettant l'ouverture concurrente de litiges multiples.
+  2. Le checkout Paylink (`OfferCheckoutView`) lisait l'offre sans verrou, autorisant des ordres concurrents sur le même inventaire.
+* **Correction implémentée :**
+  * Encapsulation complète sous `with db_transaction.atomic():` avec verrouillage pessimiste `select_for_update()` dans `PaiementDisputeView` et `OfferCheckoutView`.
+
+---
+
+### 🟠 SEC-12 : Concurrence sur l'Auto-Release Celery & Webhooks
+* **Vecteur d'attaque :** Exécution concurrente de la tâche planifiée Celery Beat `auto_release_expired_escrows` ou webhooks GeniusPay simultanés pouvant entraîner un double virement ou une incohérence de statut.
+* **Correction implémentée :**
+  * Verrouillage pessimiste atomique par paiement (`select_for_update()`) dans `auto_release_expired_escrows` et `handle_webhook_event`.
+
+---
+
+### 🟠 SEC-13 : Élévation de Privilèges & Création Frauduleuse d'Offres
+* **Vecteur d'attaque :**
+  1. Un utilisateur lambda pouvait spécifier `role="developer"` lors de son inscription publique via `/api/register/` et accéder indûment aux clés API.
+  2. N'importe quel compte authentifié pouvait créer des offres de vente sans disposer du statut vendeur.
+* **Correction implémentée :**
+  1. `UserRegistrationSerializer.validate_role` interdit désormais strictement l'attribution des rôles `deaph` et `developer` (réservé à `/api/developer/register/`).
+  2. `OfferListCreateView.post` vérifie formellement que l'initiateur possède le rôle `seller`, `member` ou `admin`.
+
+---
+
+### 🟡 SEC-14 : Timing Attack sur OTP & Transport Sécurisé KYC
+* **Vecteur d'attaque :**
+  1. La comparaison d'OTP utilisait l'opérateur standard `!=`, sensible aux attaques par analyse de temps de réponse (timing side-channel).
+  2. `validate_document_url` acceptait `http://` pour les pièces d'identité KYC (vulnérabilité à l'interception MitM).
+* **Correction implémentée :**
+  1. Comparaison à temps constant via `secrets.compare_digest(otp_provided, paiement.delivery_otp)`.
+  2. Rejet formel des URLs en `http://` pour les justificatifs KYC : `https://` ou `/media/` obligatoires.
+
+---
+
 ## 3. Résultats des Tests de Non-Régression
 
 Tous les tests unitaires et d'intégration ont été exécutés avec succès :
 ```bash
-Ran 35 tests in 64.739s
+Ran 46 tests in 89.086s
 OK
 Destroying test database for alias 'default'...
 ```
-* **Tests Authentification :** Inscription client/vendeur, rejet des rôles administrateurs non autorisés, rotation des tokens JWT.
-* **Tests Paiements :** Calcul de commission 1% au franc près en FCFA, transitions autorisées, isolation des accès propriétaire/admin.
-* **Tests Concurrence & Déblocage :** Verrouillage pessimiste atomique, vérification des statuts bloqués.
+* **Tests Authentification & Rôles :** Inscription client/vendeur, rejet de `deaph` et `developer` sur le registre public, rotation des tokens JWT.
+* **Tests Paiements & Séquestres :** Calcul de commission 1% au franc près en FCFA, transitions autorisées, isolation des accès propriétaire/admin.
+* **Tests Concurrence & Déblocage :** Verrouillage pessimiste atomique sur libération, litiges, auto-release et webhooks.
+* **Tests Paylinks & Offres Vendeur :** Création réservée aux vendeurs, consultation publique avec badge KYC, snapshots immuables.
+* **Tests OTP & Livraison Sécurisée :** Masquage de `delivery_otp` pour le vendeur, validation temps-constant via OTP ou confirmation directe acheteur.
 * **Tests Webhooks :** Validation de signature HMAC SHA-256 avec/sans timestamp, idempotence, neutralisation des rejeux.
-* **Tests Litiges & KYC :** Arbitrage admin sécurisé, protection des pièces justificatives.
 * **Tests Celery & Tâches de Fond :** Libération automatique des séquestres 3 jours, purge programmée des logs d'idempotence.
 
 ---

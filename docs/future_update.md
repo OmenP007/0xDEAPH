@@ -1,60 +1,87 @@
-# 0xSeq — État des Mises à Jour & Feuille de Route
+# 0xSeq — État des Mises à Jour & Feuille de Route d'Implémentation
 
-Ce document récapitule les fonctionnalités déployées sur 0xSeq et la feuille de route des évolutions futures.
+Ce document récapitule les fonctionnalités déployées sur 0xSeq et le journal d'avancement pas-à-pas de l'architecture bidirectionnelle (Offres, Paylinks, Rôles Contextuels, Snapshots immuables et OTP de livraison).
 
 ---
 
-## ✅ Fonctionnalités Implémentées & Validées
+## 🏆 Statut Global du Projet
 
-### 1. Commission de Séquestre (1% en FCFA)
+* **Suite de tests automatisés :** 46/46 validés (100% succès)
+* **Devise :** FCFA (XOF)
+* **Taux de commission :** 1.00%
+* **Délai de séquestre :** 3 jours (avec Auto-Release Celery Beat)
+* **Sécurité & Pentest :** Verrouillage pessimiste atomique, Anti-replay webhooks, Rate limiting, Headers stricts (CSP, HSTS).
+* **Déploiement :** Docker Compose (Django Gunicorn, Redis 7, Celery Worker, Celery Beat, Nginx SSL, SQLite3 persistant).
+
+---
+
+## 📌 Checklist Pas-à-Pas : Architecture Bidirectionnelle & Paylinks
+
+> Ce tableau sert de jalon pour suivre l'avancement exact des itérations.
+
+| Jalon | Tâche Technique | Statut |
+| :--- | :--- | :---: |
+| **1.1** | Création du modèle `Offer` (Code `OFF-XXXX`, Titre, Montant FCFA, `delivery_terms`, Vendeur) | `[FAIT]` |
+| **1.2** | Évolution du modèle `Paiement` (`offer`, `item_title`, `item_description`, `initiator_role`, `delivery_otp`) | `[FAIT]` |
+| **1.3** | Création et application des migrations Django (`0007_...`) | `[FAIT]` |
+| **2.1** | Sérialiseurs `OfferSerializer` & `OfferPublicSerializer` (avec badge KYC vendeur) | `[FAIT]` |
+| **2.2** | Sérialiseur `OfferCheckoutSerializer` (commande directe via Paylink sans ID vendeur) | `[FAIT]` |
+| **2.3** | Endpoint Vendeur : `POST /api/offers/` & `GET /api/offers/` (Gestion des offres) | `[FAIT]` |
+| **2.4** | Endpoint Public Paylink : `GET /api/offers/{code}/` (Consultation sans friction) | `[FAIT]` |
+| **2.5** | Endpoint Checkout : `POST /api/offers/{code}/checkout/` (Initiation séquestre automatique) | `[FAIT]` |
+| **2.6** | Endpoint OTP Livraison : `POST /api/payments/{id}/confirm-delivery/` (Validation par code) | `[FAIT]` |
+| **3.1** | Rédaction et validation de la suite de tests unitaires pour le flux Offre/Paylink/OTP | `[FAIT]` |
+| **3.2** | Validation globale de non-régression (Suite complète de tests passants : 46/46) | `[FAIT]` |
+
+---
+
+## ✅ Fonctionnalités Antérieures Déjà Implémentées & Validées
+
+### 1. Commission de Séquestre (1% en FCFA) `[FAIT]`
 - **Devise :** FCFA (XOF).
 - **Taux :** 1.00% par transaction (`commission_rate = 0.0100`).
 - **Prélèvement automatique :** `fee_amount` (1% du montant brut) et `net_amount` (montant reversé au vendeur) calculés au franc près.
-- **Exemple :** Sur une vente de **100 000 FCFA**, les frais s'élèvent à **1 000 FCFA** et le vendeur perçoit **99 000 FCFA**.
 - **Validation comptable :** Traçabilité complète enregistrée sur le modèle `Paiement`.
 
-### 2. Délais de Séquestre & Libération Automatique (3 Jours)
+### 2. Délais de Séquestre & Libération Automatique (3 Jours) `[FAIT]`
 - **Timer de sécurité :** Dès qu'un paiement passe à `BLOCKED`, `auto_release_at` est fixé à `now + 3 jours`.
-- **Mécanisme d'Auto-Release :** Service `auto_release_expired_escrows()` et endpoint `POST /api/payments/auto-release/` pour débloquer automatiquement les fonds expirés.
+- **Worker Celery Beat :** Déblocage automatique toutes les 15 minutes (`task_auto_release_expired_escrows`).
 - **Suspension en cas de litige :** Tout litige ouvert annule immédiatement la libération automatique.
 
-### 3. Module KYC (Know Your Customer)
-- **Modèle `KYCVerification` :** Prise en charge des CNI, Passeports et Permis de conduire.
-- **Endpoint Utilisateur :** `GET /api/kyc/` et `POST /api/kyc/` (statuts `PENDING`, `APPROVED`, `REJECTED`).
-- **Endpoint Administrateur :** `POST /api/kyc/{id}/review/` pour acceptation ou refus motivé.
-- **Méthode helper :** `user.is_kyc_approved()` sur le modèle `User`.
+### 3. Module KYC (Know Your Customer) `[FAIT]`
+- **Modèle `KYCVerification` :** CNI, Passeport, Permis de conduire.
+- **Endpoints :** `GET /api/kyc/` et `POST /api/kyc/` (statuts `PENDING`, `APPROVED`, `REJECTED`).
+- **Validation admin :** `POST /api/kyc/{id}/review/` avec motif de rejet.
 
-### 4. Gestion des Litiges (Disputes)
+### 4. Gestion des Litiges (Disputes) `[FAIT]`
 - **Modèle `Dispute` :** Statuts `OPEN`, `UNDER_REVIEW`, `RESOLVED_RELEASE`, `RESOLVED_REFUND`.
 - **Ouverture par l'acheteur :** `POST /api/payments/{id}/dispute/`.
-- **Arbitrage administrateur :** `POST /api/disputes/{id}/resolve/` permettant de trancher et déclencher le remboursement (`refund`) ou la libération (`release`).
+- **Arbitrage administrateur :** `POST /api/disputes/{id}/resolve/` sous verrou pessimiste atomique (`select_for_update()`).
 
-### 5. Clés API & Intégrations Développeurs
-- **Modèle `APIKey` :** Préfixe en clair (`0xs_live_...`), secret affiché une seule fois, empreinte SHA-256 stockée en base.
-- **Authentification DRF :** Classe `APIKeyAuthentication` via l'en-tête `X-API-Key: 0xs_live_...`.
-- **Gestion :** Endpoints `GET /api/keys/`, `POST /api/keys/`, `DELETE /api/keys/{id}/revoke/`.
+### 5. Clés API & Intégrations Développeurs `[FAIT]`
+- **Modèle `APIKey` :** Préfixe `0xs_live_...`, empreinte SHA-256 en base, secret transmis une seule fois.
+- **Authentification DRF :** Classe `APIKeyAuthentication` (`X-API-Key`).
+- **Endpoints :** `GET /api/keys/`, `POST /api/keys/`, `DELETE /api/keys/{id}/revoke/`.
 - **Espace dédié :** `POST /api/developer/register/` et `POST /api/developer/token/`.
 
-### 6. Webhooks GeniusPay
+### 6. Webhooks GeniusPay `[FAIT]`
 - **Endpoint :** `POST /api/webhooks/geniuspay/`
-- **Sécurité :** Vérification de signature HMAC SHA-256 (`X-GeniusPay-Signature`).
-- **Événements supportés :** `payment.success`, `cashout.completed`, `payment.refunded`, etc.
+- **Sécurité :** Vérification HMAC SHA-256 (`hash_hmac('sha256', $timestamp . '.' . $payload, $secret)`).
+- **Anti-Replay :** `WebhookTimestampValidationMiddleware` (fenêtre max de 5 min).
+- **Idempotence :** Modèle `WebhookEventLog` avec purge programmée Celery Beat (`task_purge_old_idempotency_logs`).
 
----
+### 7. DevOps & Conteneurisation Production `[FAIT]`
+- `Dockerfile` Python 3.12-slim optimisé.
+- `docker-compose.yml` (Gunicorn, Celery Worker, Celery Beat, Redis 7, Nginx SSL, SQLite persistant).
+- `docs/checklist_production.md` et `docs/security_audit.md`.
 
-## 🔮 Prochaines Évolutions (Roadmap v2)
-
-### 1. Notifications Push & Alertes Mobiles (SMS / WhatsApp)
-- Envoi de notifications SMS/WhatsApp lors des étapes clés :
-  - Dépôt réussi des fonds sous séquestre.
-  - Avis d'expédition de la commande.
-  - Virement des fonds sur le compte Mobile Money / bancaire du vendeur.
-  - Alerte d'ouverture de litige.
-- Providers recommandés : Termii, Twilio ou WhatsApp Cloud API.
-
-### 2. Workers Celery & Beat en Production
-- Actuellement, la libération automatique peut être exécutée via `POST /api/payments/auto-release/`.
-- Déploiement d'un conteneur worker Celery et d'un scheduler Celery Beat pour exécuter cette tâche automatiquement toutes les heures sans intervention humaine.
-
-### 3. Webhooks Sortants pour Partenaires E-Commerce
-- Permettre aux marchands d'enregistrer leur propre URL de webhook dans l'espace développeur afin de recevoir en temps réel les changements de statut de leurs commandes.
+### 8. Architecture Bidirectionnelle & Paylinks Vendeur `[FAIT]`
+- **Modèle `Offer` :** Référence publique unique et opaque `OFF-XXXX-XXXX`, montant strict en FCFA, conditions de livraison, horodatage.
+- **Instantané immuable (`item_title`, `item_description`) :** Au moment où l'acheteur procède au checkout (`POST /api/offers/{code}/checkout/`), le titre et les conditions convenus sont immédiatement figés dans la transaction `Paiement` pour empêcher toute modification ultérieure par le vendeur.
+- **Zéro saisie de compte ou téléphone :** L'acheteur ne saisit aucun identifiant vendeur. Le backend Django associe directement le paiement au vendeur vérifié de l'offre.
+- **Badge KYC Vendeur en consultation publique :** `GET /api/offers/{code}/` retourne les statuts `seller_kyc_approved` (bool) et `seller_kyc_status` (`APPROVED`, `UNVERIFIED`, etc.) pour rassurer l'acheteur sur WhatsApp, TikTok ou Facebook.
+- **OTP de Livraison Sécurisé (`delivery_otp`) :** Code secret à 6 chiffres généré à la création du séquestre. La libération des fonds (`POST /api/payments/{id}/confirm-delivery/`) s'effectue soit directement par l'acheteur après vérification du colis, soit par le vendeur/livreur transmettant l'OTP communiqué par l'acheteur.
+- **Contrôles de cohérence stricts :**
+  - Un vendeur ne peut pas acheter sa propre offre.
+  - Seules les offres actives peuvent être consultées et commandées.
+  - Pessimistic locking (`select_for_update()`) lors de la validation de livraison.

@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import APIKey, Dispute, KYCVerification, Paiement, User
+from .models import APIKey, Dispute, KYCVerification, Offer, Paiement, User
 
 
 # ─── Inscription & Auth Développeur ───────────────────────────────────────────
@@ -57,7 +57,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def validate_role(self, role: str) -> str:
         # Les rôles admin/staff ne peuvent pas être choisis à l'inscription.
-        if role in ("deaph",):
+        # Le rôle developer est réservé à /api/developer/register/
+        if role in ("deaph", "developer"):
             raise serializers.ValidationError("Ce rôle ne peut pas être attribué à l'inscription.")
         return role
 
@@ -70,17 +71,136 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return User.objects.create_user(**validated_data)
 
 
+# ─── Offres & Liens de Paiement (Paylinks) ────────────────────────────────────
+
+class OfferSerializer(serializers.ModelSerializer):
+    seller_username     = serializers.CharField(source="seller.username", read_only=True)
+    seller_kyc_approved = serializers.SerializerMethodField()
+    seller_kyc_status   = serializers.SerializerMethodField()
+    pay_url             = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Offer
+        fields = (
+            "id",
+            "code",
+            "title",
+            "description",
+            "amount",
+            "currency",
+            "delivery_terms",
+            "is_active",
+            "seller",
+            "seller_username",
+            "seller_kyc_approved",
+            "seller_kyc_status",
+            "pay_url",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = (
+            "id",
+            "code",
+            "seller",
+            "seller_username",
+            "seller_kyc_approved",
+            "seller_kyc_status",
+            "pay_url",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_seller_kyc_approved(self, obj: Offer) -> bool:
+        return obj.seller.is_kyc_approved()
+
+    def get_seller_kyc_status(self, obj: Offer) -> str:
+        if hasattr(obj.seller, "kyc"):
+            return obj.seller.kyc.status
+        return "UNVERIFIED"
+
+    def get_pay_url(self, obj: Offer) -> str:
+        request = self.context.get("request")
+        path = f"/pay/{obj.code}"
+        if request:
+            return request.build_absolute_uri(path)
+        return path
+
+    def validate_amount(self, amount):
+        if amount <= 0:
+            raise serializers.ValidationError("Le montant doit être supérieur à zéro.")
+        if amount > 100_000_000:
+            raise serializers.ValidationError("Le montant dépasse la limite autorisée (100 000 000 FCFA).")
+        return amount
+
+
+class OfferPublicSerializer(serializers.ModelSerializer):
+    """Vue publique d'une offre pour un acheteur ouvrant un lien (WhatsApp / Réseaux sociaux)."""
+    seller_username     = serializers.CharField(source="seller.username", read_only=True)
+    seller_kyc_approved = serializers.SerializerMethodField()
+    seller_kyc_status   = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Offer
+        fields = (
+            "code",
+            "title",
+            "description",
+            "amount",
+            "currency",
+            "delivery_terms",
+            "is_active",
+            "seller_username",
+            "seller_kyc_approved",
+            "seller_kyc_status",
+            "created_at",
+        )
+
+    def get_seller_kyc_approved(self, obj: Offer) -> bool:
+        return obj.seller.is_kyc_approved()
+
+    def get_seller_kyc_status(self, obj: Offer) -> str:
+        if hasattr(obj.seller, "kyc"):
+            return obj.seller.kyc.status
+        return "UNVERIFIED"
+
+
+class OfferCheckoutSerializer(serializers.Serializer):
+    """Données optionnelles transmises par l'acheteur lors du règlement du Paylink."""
+    notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Instructions de livraison éventuelles."
+    )
+
+
+class ConfirmDeliverySerializer(serializers.Serializer):
+    """Validation de la livraison physique par code OTP à 6 chiffres."""
+    otp = serializers.CharField(
+        max_length=6,
+        min_length=6,
+        required=False,
+        allow_blank=True,
+        help_text="Code OTP secret à 6 chiffres fourni par l'acheteur au livreur/vendeur."
+    )
+
+
 # ─── Paiement ─────────────────────────────────────────────────────────────────
 
 class PaiementSerializer(serializers.ModelSerializer):
     seller = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role="seller")
+        queryset=User.objects.filter(role__in=["seller", "member", "client"])
     )
 
     class Meta:
         model  = Paiement
         fields = (
             "id",
+            "offer",
+            "item_title",
+            "item_description",
+            "initiator_role",
+            "delivery_otp",
             "buyer",
             "seller",
             "amount",
@@ -96,6 +216,8 @@ class PaiementSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             "id",
+            "offer",
+            "delivery_otp",
             "buyer",
             "currency",
             "commission_rate",
@@ -107,6 +229,19 @@ class PaiementSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+    def to_representation(self, instance):
+        """
+        Masque le delivery_otp pour tout le monde sauf l'acheteur.
+        Le code OTP ne doit être visible que par l'acheteur qui doit le transmettre
+        au livreur/vendeur pour validation de livraison. Le laisser accessible
+        au vendeur via l'API briserait entièrement la mécanique de sécurité OTP.
+        """
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if not request or request.user != instance.buyer:
+            data.pop("delivery_otp", None)
+        return data
 
     def validate_amount(self, amount):
         if amount <= 0:
@@ -257,7 +392,8 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
             val = value.strip().lower()
             if any(forbidden in val for forbidden in ["javascript:", "data:", "file:", "vbscript:"]):
                 raise serializers.ValidationError("Protocole non sécurisé ou interdit.")
-            if not (val.startswith("https://") or val.startswith("http://") or val.startswith("/media/")):
+            # http:// interdit : les documents KYC doivent transiter en HTTPS uniquement
+            if not (val.startswith("https://") or val.startswith("/media/")):
                 raise serializers.ValidationError(
                     "L'URL du document doit débuter par https:// ou /media/."
                 )

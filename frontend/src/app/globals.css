@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #060B17;
+    --foreground: #F8FAFC;
+
+    --card: #0D162B;
+    --card-foreground: #F8FAFC;
+
+    --card-elevated: #121E38;
+    --card-border: #1B2B4E;
+
+    --primary: #0066FF;
+    --primary-foreground: #FFFFFF;
+
+    --accent-orange: #FF9500;
+    --accent-cyan: #00D2FF;
+
+    --muted: #131E33;
+    --muted-foreground: #8E9BAE;
+
+    --success: #10B981;
+    --danger: #EF4444;
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Background atmospheric gradients matching mobile screenshot */
+.bg-ambient-mesh {
+  background: 
+    radial-gradient(circle at 10% 20%, rgba(0, 102, 255, 0.15) 0%, transparent 45%),
+    radial-gradient(circle at 90% 85%, rgba(255, 149, 0, 0.12) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(13, 22, 43, 0.8) 0%, #060B17 100%);
+}
+
+.bg-card-gradient {
+  background: linear-gradient(135deg, rgba(14, 26, 56, 0.95) 0%, rgba(18, 34, 74, 0.85) 100%);
+  border: 1px solid rgba(27, 43, 78, 0.8);
+}
+
+.bg-card-subtle {
+  background: rgba(13, 22, 43, 0.7);
+  border: 1px solid rgba(25, 40, 72, 0.7);
+}
+
+/* Numbers font feature */
+.font-mono-numbers {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-feature-settings: "tnum" on, "lnum" on;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #060B17;
+}
+::-webkit-scrollbar-thumb {
+  background: #1B2B4E;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #0066FF;
+}

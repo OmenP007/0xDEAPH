@@ -35,6 +35,49 @@ class User(AbstractUser):
         return self.username
 
 
+# ─── Offre & Lien de Paiement (Paylink Initié par le Vendeur) ─────────────────
+
+class Offer(models.Model):
+    seller         = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="offers",
+        help_text="Vendeur ayant créé l'offre"
+    )
+    code           = models.CharField(
+        max_length=24,
+        unique=True,
+        db_index=True,
+        help_text="Identifiant public unique et opaque (ex: OFF-A1B2-C3D4)"
+    )
+    title          = models.CharField(max_length=180, help_text="Titre du produit ou service")
+    description    = models.TextField(blank=True, default="", help_text="Description détaillée de l'offre")
+    amount         = models.DecimalField(max_digits=12, decimal_places=2, help_text="Prix en FCFA")
+    currency       = models.CharField(max_length=5, default="XOF", help_text="Devise (XOF / FCFA)")
+    delivery_terms = models.TextField(blank=True, default="Livraison sous 48h contre validation de réception ou code OTP.")
+    is_active      = models.BooleanField(default=True, help_text="Indique si le lien de paiement est actif")
+    created_at     = models.DateTimeField(auto_now_add=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+
+    @staticmethod
+    def generate_code() -> str:
+        """Génère une référence opaque unique et lisible, ex: OFF-82A1-9F2B"""
+        part1 = secrets.token_hex(2).upper()
+        part2 = secrets.token_hex(2).upper()
+        return f"OFF-{part1}-{part2}"
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            code = self.generate_code()
+            while Offer.objects.filter(code=code).exists():
+                code = self.generate_code()
+            self.code = code
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"[{self.code}] {self.title} — {self.amount} {self.currency} ({self.seller.username})"
+
+
 # ─── Paiement séquestre ───────────────────────────────────────────────────────
 
 class Paiement(models.Model):
@@ -44,6 +87,11 @@ class Paiement(models.Model):
         ("DISPUTED", "En litige"),
         ("RELEASED", "Fonds libérés"),
         ("REFUNDED", "Remboursée"),
+    ]
+
+    INITIATOR_ROLES = [
+        ("seller", "Vendeur"),
+        ("buyer",  "Acheteur"),
     ]
 
     # Transitions autorisées : état actuel → états suivants possibles
@@ -60,18 +108,38 @@ class Paiement(models.Model):
     # Délai de séquestre par défaut avant libération automatique : 3 jours
     AUTO_RELEASE_DELAY_DAYS = 3
 
-    buyer           = models.ForeignKey(User, on_delete=models.PROTECT, related_name="purchase")
-    seller          = models.ForeignKey(User, on_delete=models.PROTECT, related_name="sales")
-    amount          = models.DecimalField(max_digits=12, decimal_places=2, help_text="Montant brut payé par l'acheteur en FCFA.")
-    currency        = models.CharField(max_length=5, default="XOF", help_text="Devise de la transaction (XOF / FCFA).")
-    commission_rate = models.DecimalField(max_digits=5, decimal_places=4, default=DEFAULT_COMMISSION_RATE, help_text="Taux de commission (ex: 0.0100 = 1%).")
-    fee_amount      = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Commission 0xSeq de 1% en FCFA.")
-    net_amount      = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Montant net reversé au vendeur en FCFA.")
-    escrow_id       = models.CharField(max_length=255, blank=True)
-    status          = models.CharField(max_length=10, choices=STATUS, default="CREATED")
-    auto_release_at = models.DateTimeField(null=True, blank=True, help_text="Date limite de libération automatique (3 jours après BLOCKED).")
-    created_at      = models.DateTimeField(auto_now_add=True)
-    updated_at      = models.DateTimeField(auto_now=True)
+    # Offre source si initié par un paylink
+    offer            = models.ForeignKey(
+        Offer,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="payments",
+        help_text="Offre source si initié via un Paylink vendeur."
+    )
+    # Instantané immuable des conditions convenues
+    item_title       = models.CharField(max_length=180, blank=True, default="", help_text="Instantané immuable du produit/service.")
+    item_description = models.TextField(blank=True, default="", help_text="Instantané immuable de la description.")
+    initiator_role   = models.CharField(max_length=10, choices=INITIATOR_ROLES, default="buyer", help_text="Qui a initié la transaction.")
+    delivery_otp     = models.CharField(max_length=6, blank=True, default="", help_text="Code OTP secret à 6 chiffres pour valider la livraison.")
+
+    buyer            = models.ForeignKey(User, on_delete=models.PROTECT, related_name="purchase")
+    seller           = models.ForeignKey(User, on_delete=models.PROTECT, related_name="sales")
+    amount           = models.DecimalField(max_digits=12, decimal_places=2, help_text="Montant brut payé par l'acheteur en FCFA.")
+    currency         = models.CharField(max_length=5, default="XOF", help_text="Devise de la transaction (XOF / FCFA).")
+    commission_rate  = models.DecimalField(max_digits=5, decimal_places=4, default=DEFAULT_COMMISSION_RATE, help_text="Taux de commission (ex: 0.0100 = 1%).")
+    fee_amount       = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Commission 0xSeq de 1% en FCFA.")
+    net_amount       = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Montant net reversé au vendeur en FCFA.")
+    escrow_id        = models.CharField(max_length=255, blank=True)
+    status           = models.CharField(max_length=10, choices=STATUS, default="CREATED")
+    auto_release_at  = models.DateTimeField(null=True, blank=True, help_text="Date limite de libération automatique (3 jours après BLOCKED).")
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    @staticmethod
+    def generate_delivery_otp() -> str:
+        """Génère un code secret à 6 chiffres aléatoire et cryptographiquement sûr."""
+        return f"{secrets.randbelow(900000) + 100000}"
 
     def can_transition_to(self, new_status: str) -> bool:
         return new_status in self.ALLOWED_TRANSITIONS.get(self.status, [])
@@ -88,6 +156,17 @@ class Paiement(models.Model):
 
     def save(self, *args, **kwargs):
         self.calculate_fees()
+        # Copie automatique du snapshot de l'offre si renseignée
+        if self.offer:
+            if not self.item_title:
+                self.item_title = self.offer.title
+            if not self.item_description:
+                self.item_description = self.offer.description
+
+        # Génération du code OTP de livraison s'il n'existe pas encore
+        if not self.delivery_otp:
+            self.delivery_otp = self.generate_delivery_otp()
+
         # Dès que le paiement passe à BLOCKED, on arme le timer de 3 jours d'auto-release
         if self.status == "BLOCKED" and not self.auto_release_at:
             self.auto_release_at = timezone.now() + timedelta(days=self.AUTO_RELEASE_DELAY_DAYS)

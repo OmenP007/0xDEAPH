@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import APIKey, Paiement
+from .models import APIKey, KYCVerification, Offer, Paiement
 
 User = get_user_model()
 
@@ -35,6 +35,19 @@ class RegisterTests(APITestCase):
             {
                 "username":  "faux_admin",
                 "role":      "deaph",
+                "password":  "motdepassefort1",
+                "password2": "motdepassefort1",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_register_developer_role_rejected(self):
+        response = self.client.post(
+            "/api/register/",
+            {
+                "username":  "fake_dev",
+                "role":      "developer",
                 "password":  "motdepassefort1",
                 "password2": "motdepassefort1",
             },
@@ -585,6 +598,21 @@ class KYCTests(APITestCase):
         get_res2 = self.client.get("/api/kyc/")
         self.assertEqual(get_res2.data["status"], "PENDING")
 
+    def test_kyc_rejects_http_unencrypted_url(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/kyc/",
+            {
+                "id_type": "cni",
+                "id_number": "CI-2026-111111",
+                "full_name": "Kouassi Jean",
+                "document_url": "http://insecure-site.com/cni.jpg",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("https://", str(response.data))
+
     def test_admin_can_approve_kyc(self):
         from escrow.models import KYCVerification
         kyc = KYCVerification.objects.create(
@@ -690,4 +718,224 @@ class CeleryTasksAndIdempotencyTests(APITestCase):
         self.assertEqual(purge_result["status"], "SUCCESS")
         self.assertEqual(purge_result["deleted_count"], 1)
         self.assertFalse(WebhookEventLog.objects.filter(event_id="evt_test_unique_123").exists())
+
+
+# ─── Offres & Liens de Paiement (Paylinks) ────────────────────────────────────
+
+class OfferAndPaylinkTests(APITestCase):
+    def setUp(self):
+        self.seller = make_user("vendeur_pro", "seller")
+        self.buyer = make_user("acheteur_client", "client")
+        self.stranger = make_user("inconnu_user", "client")
+
+    def test_seller_create_offer(self):
+        self.client.force_authenticate(user=self.seller)
+        payload = {
+            "title": "Samsung Galaxy S22 Ultra",
+            "description": "256GB Noir Fantôme, sous blister",
+            "amount": "150000.00",
+            "delivery_terms": "Remise en main propre ou Colissimo sécurisé",
+        }
+        response = self.client.post("/api/offers/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+        self.assertTrue(data["code"].startswith("OFF-"))
+        self.assertIn("pay_url", data)
+        self.assertEqual(data["seller_username"], "vendeur_pro")
+        self.assertEqual(data["currency"], "XOF")
+        self.assertEqual(float(data["amount"]), 150000.0)
+
+        # Vérification en base
+        offer = Offer.objects.get(code=data["code"])
+        self.assertEqual(offer.seller, self.seller)
+        self.assertTrue(offer.is_active)
+
+    def test_public_consult_offer_with_kyc_status(self):
+        offer = Offer.objects.create(
+            seller=self.seller,
+            title="iPhone 13 Pro",
+            description="État neuf",
+            amount=250000,
+            delivery_terms="Livraison express Abidjan",
+        )
+        # Visite sans authentification
+        self.client.force_authenticate(user=None)
+        response = self.client.get(f"/api/offers/{offer.code}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["title"], "iPhone 13 Pro")
+        self.assertEqual(response.data["seller_kyc_status"], "UNVERIFIED")
+
+        # Mise à jour KYC vendeur -> APPROVED
+        KYCVerification.objects.create(
+            user=self.seller,
+            id_type="cni",
+            status="APPROVED",
+        )
+        response = self.client.get(f"/api/offers/{offer.code}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["seller_kyc_status"], "APPROVED")
+
+    def test_public_consult_not_found_or_inactive(self):
+        # Offre inexistante
+        response = self.client.get("/api/offers/OFF-INEXISTANT/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Offre désactivée
+        offer = Offer.objects.create(
+            seller=self.seller,
+            title="Article Archivé",
+            amount=50000,
+            is_active=False,
+        )
+        response = self.client.get(f"/api/offers/{offer.code}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_buyer_checkout_paylink(self):
+        offer = Offer.objects.create(
+            seller=self.seller,
+            title="PlayStation 5",
+            description="Console + 2 manettes",
+            amount=300000,
+            delivery_terms="Livraison sous 48h",
+        )
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post(
+            f"/api/offers/{offer.code}/checkout/",
+            {"delivery_address": "Cocody Angré 8ème Tranche, Villa 42"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+        self.assertEqual(data["item_title"], "PlayStation 5")
+        self.assertEqual(data["item_description"], "Console + 2 manettes")
+        self.assertEqual(data["initiator_role"], "seller")
+        self.assertEqual(float(data["amount"]), 300000.0)
+        self.assertEqual(float(data["fee_amount"]), 3000.0)  # 1% de 300 000
+        self.assertEqual(float(data["net_amount"]), 297000.0)
+
+        # Vérification OTP à 6 chiffres
+        otp = data.get("delivery_otp")
+        self.assertTrue(otp)
+        self.assertEqual(len(otp), 6)
+        self.assertTrue(otp.isdigit())
+
+        # Vérification en base
+        p = Paiement.objects.get(pk=data["id"])
+        self.assertEqual(p.buyer, self.buyer)
+        self.assertEqual(p.seller, self.seller)
+        self.assertEqual(p.offer, offer)
+
+    def test_seller_cannot_checkout_own_offer(self):
+        offer = Offer.objects.create(
+            seller=self.seller,
+            title="MacBook Air M2",
+            amount=650000,
+        )
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post(f"/api/offers/{offer.code}/checkout/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("propre offre", str(response.data))
+
+    def test_delivery_confirmation_flow(self):
+        offer = Offer.objects.create(
+            seller=self.seller,
+            title="Drone DJI Mini 3",
+            amount=400000,
+        )
+        self.client.force_authenticate(user=self.buyer)
+        checkout_resp = self.client.post(f"/api/offers/{offer.code}/checkout/", {}, format="json")
+        paiement_id = checkout_resp.data["id"]
+        paiement = Paiement.objects.get(pk=paiement_id)
+
+        # 1. En statut CREATED, la confirmation doit échouer
+        response = self.client.post(f"/api/payments/{paiement_id}/confirm-delivery/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Impossible de libérer", str(response.data))
+
+        # Passer manuellement à BLOCKED (simulation confirmation GeniusPay)
+        paiement.status = "BLOCKED"
+        paiement.save()
+
+        # 2. Un tiers inconnu tente de valider la livraison -> 403 Forbidden
+        self.client.force_authenticate(user=self.stranger)
+        response = self.client.post(
+            f"/api/payments/{paiement_id}/confirm-delivery/",
+            {"otp": paiement.delivery_otp},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. Le vendeur tente de valider avec un OTP invalide -> 400 Bad Request
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post(
+            f"/api/payments/{paiement_id}/confirm-delivery/",
+            {"otp": "000000"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("invalide", str(response.data))
+
+        # 4. Le vendeur valide avec le BON OTP -> 200 OK et statut RELEASED
+        response = self.client.post(
+            f"/api/payments/{paiement_id}/confirm-delivery/",
+            {"otp": paiement.delivery_otp},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        paiement.refresh_from_db()
+        self.assertEqual(paiement.status, "RELEASED")
+
+    def test_buyer_direct_delivery_confirmation(self):
+        offer = Offer.objects.create(
+            seller=self.seller,
+            title="Montre Garmin",
+            amount=180000,
+        )
+        p = Paiement.objects.create(
+            offer=offer,
+            buyer=self.buyer,
+            seller=self.seller,
+            amount=180000,
+            status="BLOCKED",
+        )
+        # L'acheteur valide directement sans avoir besoin de renseigner l'OTP
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post(f"/api/payments/{p.pk}/confirm-delivery/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        p.refresh_from_db()
+        self.assertEqual(p.status, "RELEASED")
+
+    def test_client_cannot_create_offer(self):
+        self.client.force_authenticate(user=self.buyer)
+        payload = {
+            "title": "Produit Interdit",
+            "amount": "10000.00",
+        }
+        response = self.client.post("/api/offers/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_delivery_otp_hidden_from_seller_and_stranger(self):
+        offer = Offer.objects.create(
+            seller=self.seller,
+            title="Caméra Sony",
+            amount=500000,
+        )
+        # L'acheteur passe la commande -> l'OTP est visible pour lui
+        self.client.force_authenticate(user=self.buyer)
+        res = self.client.post(f"/api/offers/{offer.code}/checkout/", {}, format="json")
+        paiement_id = res.data["id"]
+        self.assertTrue(res.data.get("delivery_otp"))
+
+        # Le vendeur consulte le paiement -> delivery_otp doit être masqué
+        self.client.force_authenticate(user=self.seller)
+        detail_res = self.client.get(f"/api/payments/{paiement_id}/")
+        self.assertEqual(detail_res.status_code, status.HTTP_200_OK)
+        self.assertNotIn("delivery_otp", detail_res.data)
+
+        # La liste côté vendeur ne contient pas l'OTP non plus
+        list_res = self.client.get("/api/payments/")
+        for p_item in list_res.data.get("results", list_res.data):
+            if p_item["id"] == paiement_id:
+                self.assertNotIn("delivery_otp", p_item)
+
 

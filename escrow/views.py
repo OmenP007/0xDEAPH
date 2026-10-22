@@ -1,4 +1,5 @@
 import logging
+import secrets
 from pathlib import Path
 
 from django.conf import settings
@@ -21,11 +22,12 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import APIKey, Dispute, KYCVerification, Paiement
+from .models import APIKey, Dispute, KYCVerification, Offer, Paiement
 from .permissions import IsAdmin, IsClient, IsDeveloper, IsOwnerOrAdmin
 from .serializers import (
     APIKeyCreateSerializer,
     APIKeySerializer,
+    ConfirmDeliverySerializer,
     DeveloperRegistrationSerializer,
     DeveloperTokenObtainPairSerializer,
     DisputeCreateSerializer,
@@ -33,6 +35,9 @@ from .serializers import (
     DisputeSerializer,
     KYCReviewSerializer,
     KYCVerificationSerializer,
+    OfferCheckoutSerializer,
+    OfferPublicSerializer,
+    OfferSerializer,
     PaiementSerializer,
     PaiementStatusSerializer,
     UserRegistrationSerializer,
@@ -379,37 +384,39 @@ class PaiementDisputeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: Request, pk: int) -> Response:
-        try:
-            paiement = Paiement.objects.get(pk=pk)
-        except Paiement.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound("Paiement introuvable.")
-
-        if paiement.buyer != request.user and not (request.user.role == "deaph" or request.user.is_staff):
-            raise PermissionDenied("Seul l'acheteur peut ouvrir un litige sur cette transaction.")
-
-        if paiement.status != "BLOCKED":
-            raise ValidationError(
-                f"Impossible d'ouvrir un litige sur un paiement en statut « {paiement.status} » (seul un paiement BLOCKED est éligible)."
-            )
-
-        if hasattr(paiement, "dispute"):
-            raise ValidationError("Un litige a déjà été ouvert pour cette transaction.")
-
         serializer = DisputeCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        dispute = Dispute.objects.create(
-            paiement=paiement,
-            opened_by=request.user,
-            reason=serializer.validated_data["reason"],
-            details=serializer.validated_data["details"],
-            status="OPEN",
-        )
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            try:
+                paiement = Paiement.objects.select_for_update().get(pk=pk)
+            except Paiement.DoesNotExist:
+                from rest_framework.exceptions import NotFound
+                raise NotFound("Paiement introuvable.")
 
-        paiement.status = "DISPUTED"
-        paiement.auto_release_at = None
-        paiement.save()
+            if paiement.buyer != request.user and not (request.user.role == "deaph" or request.user.is_staff):
+                raise PermissionDenied("Seul l'acheteur peut ouvrir un litige sur cette transaction.")
+
+            if paiement.status != "BLOCKED":
+                raise ValidationError(
+                    f"Impossible d'ouvrir un litige sur un paiement en statut « {paiement.status} » (seul un paiement BLOCKED est éligible)."
+                )
+
+            if hasattr(paiement, "dispute"):
+                raise ValidationError("Un litige a déjà été ouvert pour cette transaction.")
+
+            dispute = Dispute.objects.create(
+                paiement=paiement,
+                opened_by=request.user,
+                reason=serializer.validated_data["reason"],
+                details=serializer.validated_data["details"],
+                status="OPEN",
+            )
+
+            paiement.status = "DISPUTED"
+            paiement.auto_release_at = None
+            paiement.save(update_fields=["status", "auto_release_at", "updated_at"])
 
         logger.info(
             "[Audit] Litige #%s ouvert sur Paiement #%s par l'utilisateur #%s",
@@ -583,4 +590,174 @@ class KYCReviewView(APIView):
         kyc.save()
 
         return Response(KYCVerificationSerializer(kyc).data)
+
+
+# ─── Offres & Liens de Paiement (Paylinks) ────────────────────────────────────
+
+@extend_schema(tags=["Offres (Paylinks)"])
+class OfferListCreateView(APIView):
+    """
+    GET  — Liste les offres de vente créées par l'utilisateur connecté.
+    POST — Crée une nouvelle offre et génère un lien de paiement unique (ex: OFF-82A1-9F2B).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        offers = Offer.objects.filter(seller=request.user).order_by("-created_at")
+        serializer = OfferSerializer(offers, many=True, context={"request": request})
+        return Response(serializer.data)
+
+    def post(self, request: Request) -> Response:
+        if request.user.role not in ("seller", "member", "deaph") and not request.user.is_staff:
+            raise PermissionDenied("Seuls les vendeurs ou membres peuvent créer des offres de vente.")
+        serializer = OfferSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        offer = serializer.save(seller=request.user)
+        return Response(
+            OfferSerializer(offer, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema(tags=["Offres (Paylinks)"])
+class OfferPublicDetailView(APIView):
+    """
+    GET — Consultation publique d'un Paylink (sans mot de passe).
+          Permet à l'acheteur d'examiner le produit, le prix et le statut KYC du vendeur.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request: Request, code: str) -> Response:
+        try:
+            offer = Offer.objects.select_related("seller").get(code=code.strip().upper(), is_active=True)
+        except Offer.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("Offre introuvable ou inactive.")
+
+        return Response(OfferPublicSerializer(offer).data)
+
+
+@extend_schema(tags=["Offres (Paylinks)"])
+class OfferCheckoutView(APIView):
+    """
+    POST — L'acheteur finalise la commande sur un Paylink.
+           Crée un Paiement sous séquestre lié à l'offre avec instantané immuable du prix
+           et des conditions, puis initie le séquestre auprès de GeniusPay.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request, code: str) -> Response:
+        serializer = OfferCheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            try:
+                offer = Offer.objects.select_for_update().select_related("seller").get(
+                    code=code.strip().upper(), is_active=True
+                )
+            except Offer.DoesNotExist:
+                from rest_framework.exceptions import NotFound
+                raise NotFound("Offre introuvable ou inactive.")
+
+            if offer.seller == request.user:
+                raise ValidationError("Tu ne peux pas acheter ta propre offre de vente.")
+
+            # Création de la transaction de séquestre avec snapshot immuable
+            paiement = Paiement.objects.create(
+                offer=offer,
+                buyer=request.user,
+                seller=offer.seller,
+                amount=offer.amount,
+                currency=offer.currency,
+                item_title=offer.title,
+                item_description=offer.description,
+                initiator_role="seller",
+                status="CREATED",
+            )
+
+        # Initiation auprès de GeniusPay
+        try:
+            escrow_id = GeniusPayService().initiate_escrow(paiement)
+            paiement.escrow_id = escrow_id
+            paiement.save(update_fields=["escrow_id"])
+        except GeniusPayError as exc:
+            logger.error("GeniusPay initiation échouée pour Paylink %s : %s", offer.code, exc)
+
+        logger.info(
+            "[Paylink] Achat initié : Offre %s par acheteur #%s -> Paiement #%s",
+            offer.code, request.user.pk, paiement.pk,
+        )
+        # NOTE sécurité : le delivery_otp n'est JAMAIS loggué — il est uniquement
+        # transmis à l'acheteur via la réponse API (filtrée selon le rôle).
+        return Response(PaiementSerializer(paiement, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
+# ─── Confirmation de Livraison (OTP Livreur) ──────────────────────────────────
+
+@extend_schema(tags=["Paiements"])
+class PaiementConfirmDeliveryView(APIView):
+    """
+    POST — Confirme la livraison et libère les fonds :
+           - Par l'acheteur directement.
+           - OU par le vendeur/livreur en transmettant le code OTP secret fourni par l'acheteur.
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_scope     = "sensitive"
+
+    def post(self, request: Request, pk: int) -> Response:
+        try:
+            paiement = Paiement.objects.get(pk=pk)
+        except Paiement.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("Paiement introuvable.")
+
+        if not paiement.can_transition_to("RELEASED"):
+            raise ValidationError(
+                f"Impossible de libérer un paiement en statut « {paiement.status} »."
+            )
+
+        serializer = ConfirmDeliverySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        otp_provided = serializer.validated_data.get("otp", "").strip()
+
+        # Vérification des autorisations :
+        # Cas 1 : L'acheteur valide lui-même (l'OTP n'est pas obligatoire s'il est l'acheteur authentifié)
+        # Cas 2 : Le vendeur ou livreur valide avec le code OTP à 6 chiffres
+        is_buyer = (paiement.buyer == request.user)
+        is_seller = (paiement.seller == request.user)
+        is_admin = (request.user.role == "deaph" or request.user.is_staff)
+
+        if not (is_buyer or is_seller or is_admin):
+            raise PermissionDenied("Vous n'êtes pas partie prenante de cette transaction.")
+
+        if is_seller and not is_admin:
+            # Le vendeur doit obligatoirement présenter le bon OTP donné par l'acheteur (comparaison temps-constant)
+            if not otp_provided or not secrets.compare_digest(otp_provided, paiement.delivery_otp):
+                raise ValidationError("Code OTP de livraison invalide ou manquant.")
+
+        # Verrouillage atomique et libération des fonds
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            paiement_locked = Paiement.objects.select_for_update().get(pk=paiement.pk)
+            if not paiement_locked.can_transition_to("RELEASED"):
+                raise ValidationError(f"Statut modifié concurremment : {paiement_locked.status}.")
+
+            try:
+                if paiement_locked.escrow_id:
+                    GeniusPayService().release_funds(paiement_locked.escrow_id)
+            except GeniusPayError as exc:
+                logger.error("GeniusPay release échoué lors de la livraison paiement #%s : %s", paiement_locked.pk, exc)
+                raise ValidationError(f"Erreur GeniusPay : {exc}")
+
+            paiement_locked.status = "RELEASED"
+            paiement_locked.save(update_fields=["status", "updated_at"])
+
+        logger.info(
+            "[Audit] Livraison confirmée pour Paiement #%s par utilisateur #%s (Méthode: %s)",
+            paiement_locked.pk, request.user.pk, "Acheteur direct" if is_buyer else "OTP Livreur",
+        )
+        return Response(PaiementStatusSerializer(paiement_locked).data)
+
+
 
