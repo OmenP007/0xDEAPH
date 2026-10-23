@@ -5,8 +5,12 @@ server {
     listen 80;
     server_name api.votredomaine.com;
 
-    location /.well-known/acme-challenge/ {
+    location ^~ /.well-known/acme-challenge/ {
         root /var/www/certbot;
+    }
+
+    location ~ /\.(?!well-known/acme-challenge/) {
+        return 404;
     }
 
     location / {
@@ -31,6 +35,24 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Ne jamais exposer les fichiers caches ou les dossiers internes.
+    location ~ /\.(?!well-known/acme-challenge/) {
+        return 404;
+    }
+
+    location ~* ^/(?:data|backups|private|secrets)(?:/|$) {
+        return 404;
+    }
+
+    location ~* \.(?:sqlite3?|db|sql|pem|key|bak|backup|old|orig|log)$ {
+        return 404;
+    }
+
+    # Bloquer les medias prives, quelle que soit la casse du chemin.
+    location ~* ^/media/(?:kyc|private)(?:/|$) {
+        return 404;
+    }
 
     location /static/ {
         alias /app/staticfiles/;
