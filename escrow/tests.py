@@ -1,4 +1,8 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -572,6 +576,63 @@ class KYCTests(APITestCase):
         self.admin = make_user("kyc_admin", "deaph")
         self.admin.is_staff = True
         self.admin.save()
+        self.media_tempdir = TemporaryDirectory()
+        self.addCleanup(self.media_tempdir.cleanup)
+        self.media_root = Path(self.media_tempdir.name) / "media"
+
+    def create_kyc_document(self, user=None, document_url="/media/kyc/identity.pdf"):
+        kyc = KYCVerification.objects.create(
+            user=user or self.user,
+            id_type="cni",
+            id_number="CI-2026-987654",
+            full_name="Kouassi Jean",
+            document_url=document_url,
+        )
+        file_path = self.media_root / "kyc" / "identity.pdf"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(b"private KYC document")
+        return kyc
+
+    def test_owner_can_download_kyc_document(self):
+        kyc = self.create_kyc_document()
+        self.client.force_authenticate(user=self.user)
+
+        with override_settings(MEDIA_ROOT=self.media_root):
+            response = self.client.get(f"/api/kyc/{kyc.pk}/document/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Cache-Control"], "private, no-store")
+        self.assertEqual(b"".join(response.streaming_content), b"private KYC document")
+
+    def test_other_user_cannot_download_kyc_document(self):
+        kyc = self.create_kyc_document()
+        other_user = make_user("other_kyc_user", "client")
+        self.client.force_authenticate(user=other_user)
+
+        with override_settings(MEDIA_ROOT=self.media_root):
+            response = self.client.get(f"/api/kyc/{kyc.pk}/document/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_download_kyc_document(self):
+        kyc = self.create_kyc_document()
+        self.client.force_authenticate(user=self.admin)
+
+        with override_settings(MEDIA_ROOT=self.media_root):
+            response = self.client.get(f"/api/kyc/{kyc.pk}/document/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_kyc_document_path_cannot_escape_media_root(self):
+        outside_file = Path(self.media_tempdir.name) / "secret.txt"
+        outside_file.write_text("not a KYC document", encoding="utf-8")
+        kyc = self.create_kyc_document(document_url="/media/kyc/../../secret.txt")
+        self.client.force_authenticate(user=self.user)
+
+        with override_settings(MEDIA_ROOT=self.media_root):
+            response = self.client.get(f"/api/kyc/{kyc.pk}/document/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_submit_and_consult_kyc(self):
         self.client.force_authenticate(user=self.user)

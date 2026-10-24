@@ -10,6 +10,7 @@ from .views import (
     DisputeDetailResolveView,
     GeniusPayWebhookView,
     HealthView,
+    KYCDocumentView,
     KYCReviewView,
     KYCView,
     OfferCheckoutView,
@@ -63,6 +64,7 @@ urlpatterns = [
 
     # ── Module KYC (Conformité) ───────────────────────────────────────────────
     path("api/kyc/",                       KYCView.as_view(),                  name="kyc"),
+    path("api/kyc/<int:pk>/document/",      KYCDocumentView.as_view(),          name="kyc-document"),
     path("api/kyc/<int:pk>/review/",       KYCReviewView.as_view(),            name="kyc-review"),
 
     # ── Clés API ──────────────────────────────────────────────────────────────

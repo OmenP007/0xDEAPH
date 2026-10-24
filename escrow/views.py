@@ -1,6 +1,7 @@
 import logging
 import secrets
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -562,6 +563,50 @@ class KYCView(APIView):
             KYCVerificationSerializer(kyc).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+@extend_schema(tags=["KYC (Conformité)"])
+class KYCDocumentView(APIView):
+    """Télécharge un justificatif local au propriétaire ou à un administrateur."""
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+
+    def get(self, request: Request, pk: int) -> FileResponse:
+        try:
+            kyc = KYCVerification.objects.select_related("user").get(pk=pk)
+        except KYCVerification.DoesNotExist:
+            raise Http404
+
+        self.check_object_permissions(request, kyc)
+
+        parsed_url = urlsplit(kyc.document_url)
+        if parsed_url.scheme or parsed_url.netloc or parsed_url.query or parsed_url.fragment:
+            raise Http404
+
+        document_path = unquote(parsed_url.path)
+        media_prefix = "/media/kyc/"
+        if not document_path.startswith(media_prefix) or "\\" in document_path or "\x00" in document_path:
+            raise Http404
+
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        relative_path = document_path.removeprefix("/media/")
+        try:
+            file_path = (media_root / relative_path).resolve(strict=True)
+            file_path.relative_to(media_root)
+        except (OSError, RuntimeError, ValueError):
+            raise Http404
+
+        if not file_path.is_file():
+            raise Http404
+
+        response = FileResponse(
+            file_path.open("rb"),
+            as_attachment=True,
+            filename=file_path.name,
+            content_type="application/octet-stream",
+        )
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 @extend_schema(tags=["KYC (Conformité)"])
