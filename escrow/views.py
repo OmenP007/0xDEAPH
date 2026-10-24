@@ -127,12 +127,13 @@ class PaiementListCreateView(ListCreateAPIView):
 
         # Initiation auprès de GeniusPay
         try:
-            escrow_id = GeniusPayService().initiate_escrow(paiement)
-            paiement.escrow_id = escrow_id
-            paiement.save(update_fields=["escrow_id"])
+            provider_payment = GeniusPayService().initiate_payment(paiement)
+            paiement.provider_reference = provider_payment["reference"]
+            paiement.checkout_url = provider_payment["checkout_url"]
+            paiement.save(update_fields=["provider_reference", "checkout_url"])
         except GeniusPayError as exc:
             logger.error("GeniusPay initiation échouée pour paiement #%s : %s", paiement.pk, exc)
-            # On ne bloque pas la création — l'escrow_id restera vide jusqu'au retry.
+            raise ValidationError(f"Impossible d'initier le paiement chez GeniusPay : {exc}")
 
 
 @extend_schema(tags=["Paiements"])
@@ -179,7 +180,7 @@ class PaiementReleaseView(APIView):
                     f"Statut modifié concurremment : {paiement_locked.status}."
                 )
             try:
-                GeniusPayService().release_funds(paiement_locked.escrow_id)
+                GeniusPayService().release_funds(paiement_locked.provider_reference)
             except GeniusPayError as exc:
                 logger.error(
                     "GeniusPay release échoué pour escrow_id=%s : %s",
@@ -236,7 +237,7 @@ class PaiementRefundView(APIView):
                 )
 
             try:
-                GeniusPayService().refund_buyer(paiement_locked.escrow_id)
+                GeniusPayService().refund_buyer(paiement_locked.provider_reference)
             except GeniusPayError as exc:
                 logger.error("GeniusPay refund échoué pour escrow_id=%s : %s", paiement_locked.escrow_id, exc)
                 raise ValidationError(f"Erreur GeniusPay : {exc}")
@@ -468,20 +469,20 @@ class DisputeDetailResolveView(APIView):
 
             if action == "release":
                 try:
-                    if paiement.escrow_id:
-                        GeniusPayService().release_funds(paiement.escrow_id)
+                    GeniusPayService().release_funds(paiement.provider_reference)
                 except GeniusPayError as exc:
                     logger.error("GeniusPay release échoué pour litige #%s : %s", dispute_locked.pk, exc)
+                    raise ValidationError(f"Libération GeniusPay indisponible : {exc}")
 
                 paiement.status = "RELEASED"
                 dispute_locked.status = "RESOLVED_RELEASE"
 
             elif action == "refund":
                 try:
-                    if paiement.escrow_id:
-                        GeniusPayService().refund_buyer(paiement.escrow_id)
+                    GeniusPayService().refund_buyer(paiement.provider_reference)
                 except GeniusPayError as exc:
                     logger.error("GeniusPay refund échoué pour litige #%s : %s", dispute_locked.pk, exc)
+                    raise ValidationError(f"Remboursement GeniusPay échoué : {exc}")
 
                 paiement.status = "REFUNDED"
                 dispute_locked.status = "RESOLVED_REFUND"
@@ -723,11 +724,13 @@ class OfferCheckoutView(APIView):
 
         # Initiation auprès de GeniusPay
         try:
-            escrow_id = GeniusPayService().initiate_escrow(paiement)
-            paiement.escrow_id = escrow_id
-            paiement.save(update_fields=["escrow_id"])
+            provider_payment = GeniusPayService().initiate_payment(paiement)
+            paiement.provider_reference = provider_payment["reference"]
+            paiement.checkout_url = provider_payment["checkout_url"]
+            paiement.save(update_fields=["provider_reference", "checkout_url"])
         except GeniusPayError as exc:
             logger.error("GeniusPay initiation échouée pour Paylink %s : %s", offer.code, exc)
+            raise ValidationError(f"Impossible d'initier le paiement chez GeniusPay : {exc}")
 
         logger.info(
             "[Paylink] Achat initié : Offre %s par acheteur #%s -> Paiement #%s",
@@ -789,8 +792,7 @@ class PaiementConfirmDeliveryView(APIView):
                 raise ValidationError(f"Statut modifié concurremment : {paiement_locked.status}.")
 
             try:
-                if paiement_locked.escrow_id:
-                    GeniusPayService().release_funds(paiement_locked.escrow_id)
+                GeniusPayService().release_funds(paiement_locked.provider_reference)
             except GeniusPayError as exc:
                 logger.error("GeniusPay release échoué lors de la livraison paiement #%s : %s", paiement_locked.pk, exc)
                 raise ValidationError(f"Erreur GeniusPay : {exc}")

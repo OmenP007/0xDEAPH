@@ -210,6 +210,8 @@ class PaiementSerializer(serializers.ModelSerializer):
             "net_amount",
             "status",
             "escrow_id",
+            "provider_reference",
+            "checkout_url",
             "auto_release_at",
             "created_at",
             "updated_at",
@@ -225,6 +227,8 @@ class PaiementSerializer(serializers.ModelSerializer):
             "net_amount",
             "status",
             "escrow_id",
+            "provider_reference",
+            "checkout_url",
             "auto_release_at",
             "created_at",
             "updated_at",
@@ -265,8 +269,8 @@ class PaiementStatusSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = Paiement
-        fields = ("id", "status", "escrow_id", "updated_at")
-        read_only_fields = ("id", "escrow_id", "updated_at")
+        fields = ("id", "status", "escrow_id", "provider_reference", "updated_at")
+        read_only_fields = ("id", "escrow_id", "provider_reference", "updated_at")
 
     def validate_status(self, new_status: str) -> str:
         paiement: Paiement = self.instance

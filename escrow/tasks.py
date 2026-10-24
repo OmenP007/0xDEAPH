@@ -81,10 +81,9 @@ def task_purge_old_idempotency_logs(self, days: int = 30):
 @shared_task(bind=True, max_retries=3, default_retry_delay=30, name="escrow.tasks.task_release_single_escrow")
 def task_release_single_escrow(self, paiement_id: int):
     """
-    Tâche asynchrone unitaire pour libérer un paiement spécifique via GeniusPay.
+    Le payout unitaire n'est pas disponible dans l'API GeniusPay documentée.
     """
     from .models import Paiement
-    from .services import GeniusPayService, GeniusPayError
 
     try:
         paiement = Paiement.objects.get(pk=paiement_id)
@@ -92,24 +91,9 @@ def task_release_single_escrow(self, paiement_id: int):
             logger.warning("[Celery] Impossible de libérer le paiement #%s (statut actuel: %s)", paiement_id, paiement.status)
             return {"status": "SKIPPED", "paiement_id": paiement_id, "reason": f"Statut invalide ({paiement.status})"}
 
-        service = GeniusPayService()
-        if paiement.escrow_id:
-            service.release_funds(paiement.escrow_id)
-
-        paiement.status = "RELEASED"
-        paiement.save()
-        logger.info("[Celery] Paiement #%s libéré avec succès.", paiement_id)
-        return {"status": "SUCCESS", "paiement_id": paiement_id}
+        logger.warning("[Celery] Payout indisponible pour paiement #%s : endpoint GeniusPay non documenté.", paiement_id)
+        return {"status": "NOT_SUPPORTED", "paiement_id": paiement_id}
 
     except Paiement.DoesNotExist:
         logger.error("[Celery] Paiement #%s introuvable pour libération asynchrone.", paiement_id)
         return {"status": "NOT_FOUND", "paiement_id": paiement_id}
-    except GeniusPayError as exc:
-        countdown = 30 * (2 ** self.request.retries)
-        logger.warning(
-            "[Celery] Échec GeniusPay release pour paiement #%s: %s. Retry dans %ds.",
-            paiement_id,
-            exc,
-            countdown,
-        )
-        raise self.retry(exc=exc, countdown=countdown)

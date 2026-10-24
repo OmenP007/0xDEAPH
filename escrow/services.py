@@ -23,9 +23,11 @@ import hmac
 import logging
 import re
 from decimal import Decimal
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +54,8 @@ class GeniusPayService:
 
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.secret}",
-            "X-Api-Key": self.api_key,
+            "X-API-Key": self.api_key,
+            "X-API-Secret": self.secret,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -73,38 +75,17 @@ class GeniusPayService:
             raise GeniusPayError(f"Impossible de joindre GeniusPay : {exc}")
 
         if not response.ok:
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = {}
+            error = error_payload.get("error") or {}
             logger.error(
                 "GeniusPay %s %s → %s : %s",
                 "POST", url, response.status_code, response.text[:200],
             )
             raise GeniusPayError(
-                response.json().get("message", "Erreur GeniusPay inconnue."),
-                status_code=response.status_code,
-            )
-
-        return response.json()
-
-    def _patch(self, endpoint: str, payload: dict) -> dict:
-        url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        try:
-            response = requests.patch(
-                url,
-                json=payload,
-                headers=self._headers(),
-                timeout=self.TIMEOUT,
-            )
-        except requests.exceptions.Timeout:
-            raise GeniusPayError("Délai d'attente dépassé lors de la connexion à GeniusPay.")
-        except requests.exceptions.ConnectionError as exc:
-            raise GeniusPayError(f"Impossible de joindre GeniusPay : {exc}")
-
-        if not response.ok:
-            logger.error(
-                "GeniusPay %s %s → %s : %s",
-                "PATCH", url, response.status_code, response.text[:200],
-            )
-            raise GeniusPayError(
-                response.json().get("message", "Erreur GeniusPay inconnue."),
+                error.get("message") or error_payload.get("message", "Erreur GeniusPay inconnue."),
                 status_code=response.status_code,
             )
 
@@ -112,45 +93,57 @@ class GeniusPayService:
 
     # ── API publique ──────────────────────────────────────────────────────────
 
-    def initiate_escrow(self, paiement) -> str:
+    def initiate_payment(self, paiement) -> dict[str, str]:
         """
-        Initie un séquestre auprès de GeniusPay.
+        Crée un paiement GeniusPay et retourne sa référence et son URL de checkout.
+        """
+        amount = paiement.amount
+        customer_name = paiement.buyer.get_full_name() or paiement.buyer.username
+        customer = {"name": customer_name}
+        if paiement.buyer.email:
+            customer["email"] = paiement.buyer.email
 
-        Retourne l'identifiant de séquestre (escrow_id) attribué par GeniusPay.
-        """
         payload = {
-            "amount":      str(paiement.amount),
-            "currency":    getattr(paiement, "currency", "XOF"),
-            "buyer_ref":   str(paiement.buyer_id),
-            "seller_ref":  str(paiement.seller_id),
-            "reference":   f"0xseq-{paiement.pk}",
-            "description": f"Séquestre 0xSeq #{paiement.pk} ({paiement.amount} {getattr(paiement, 'currency', 'XOF')})",
+            "amount": int(amount) if amount == amount.to_integral_value() else float(amount),
+            "currency": paiement.currency,
+            "description": f"{paiement.item_title or 'Paiement 0xSeq'} - commande #{paiement.pk}",
+            "external_reference": f"0xseq-{paiement.pk}",
+            "customer": customer,
+            "metadata": {
+                "payment_id": str(paiement.pk),
+                "buyer_id": str(paiement.buyer_id),
+                "seller_id": str(paiement.seller_id),
+            },
         }
-        data = self._post("/escrow/initiate", payload)
-        escrow_id: str = data.get("escrow_id") or data.get("id") or ""
-        if not escrow_id:
-            raise GeniusPayError("GeniusPay n'a pas retourné d'identifiant de séquestre.")
-        logger.info("Séquestre initié : escrow_id=%s pour paiement #%s", escrow_id, paiement.pk)
-        return escrow_id
+        response = self._post("/payments", payload)
+        data = response.get("data") or {}
+        reference = data.get("reference")
+        checkout_url = data.get("checkout_url") or data.get("payment_url")
+        if not reference or not checkout_url:
+            raise GeniusPayError("GeniusPay n'a pas retourné la référence et l'URL de checkout.")
+        logger.info("Paiement GeniusPay créé : reference=%s pour paiement #%s", reference, paiement.pk)
+        return {"reference": str(reference), "checkout_url": str(checkout_url)}
 
-    def release_funds(self, escrow_id: str) -> dict:
+    def release_funds(self, payment_reference: str) -> dict:
         """
-        Libère les fonds vers le vendeur.
+        GeniusPay ne documente pas d'endpoint marchand de payout/libération.
+        """
+        raise GeniusPayError(
+            "Aucun endpoint de libération/payout GeniusPay n'est documenté; aucun virement n'a été effectué.",
+            status_code=501,
+        )
 
-        Retourne la réponse brute de GeniusPay.
+    def refund_buyer(self, payment_reference: str, amount=None, reason: str = "") -> dict:
         """
-        data = self._patch(f"/escrow/{escrow_id}/release", {"action": "release"})
-        logger.info("Fonds libérés pour escrow_id=%s", escrow_id)
-        return data
-
-    def refund_buyer(self, escrow_id: str) -> dict:
+        Rembourse un paiement complété avec l'endpoint documenté par GeniusPay.
         """
-        Rembourse l'acheteur.
-
-        Retourne la réponse brute de GeniusPay.
-        """
-        data = self._patch(f"/escrow/{escrow_id}/refund", {"action": "refund"})
-        logger.info("Remboursement effectué pour escrow_id=%s", escrow_id)
+        payload = {}
+        if amount is not None:
+            payload["amount"] = float(amount)
+        if reason:
+            payload["reason"] = reason
+        data = self._post(f"/payments/{quote(payment_reference, safe='')}/refund", payload)
+        logger.info("Remboursement GeniusPay demandé pour reference=%s", payment_reference)
         return data
 
     # ── Gestion des Webhooks ──────────────────────────────────────────────────
@@ -217,7 +210,12 @@ class GeniusPayService:
             return False, "Aucun type d'événement spécifié."
 
         data = payload.get("data") or {}
+        transaction_data = data.get("transaction") or data
+        metadata = transaction_data.get("metadata") or data.get("metadata") or {}
+        reference = transaction_data.get("reference") or data.get("reference") or ""
         event_id = str(payload.get("id") or payload.get("event_id") or data.get("id") or "").strip()
+        if not event_id and reference:
+            event_id = f"{event}:{reference}:{payload.get('timestamp', '')}"
 
         # ── Gestion de l'idempotence ──
         if event_id:
@@ -226,21 +224,32 @@ class GeniusPayService:
                 logger.info("GeniusPay webhook déjà traité (idempotence) : event_id=%s", event_id)
                 return True, f"Événement '{event_id}' déjà traité (idempotence)."
 
-        escrow_id = data.get("escrow_id") or data.get("id") or ""
-        reference = data.get("reference") or ""
+        external_reference = (
+            transaction_data.get("external_reference")
+            or data.get("external_reference")
+            or ""
+        )
+        payment_id = metadata.get("payment_id") or metadata.get("order_id")
+        legacy_escrow_id = data.get("escrow_id") or ""
 
         # Recherche du paiement correspondant
         paiement = None
-        if escrow_id:
-            paiement = Paiement.objects.filter(escrow_id=escrow_id).first()
+        if payment_id:
+            paiement = Paiement.objects.filter(pk=payment_id).first()
 
         if not paiement and reference:
-            match = re.search(r"0xseq-(\d+)", str(reference))
+            paiement = Paiement.objects.filter(provider_reference=reference).first()
+
+        if not paiement and external_reference:
+            match = re.search(r"0xseq-(\d+)", str(external_reference))
             if match:
                 paiement = Paiement.objects.filter(pk=match.group(1)).first()
 
         if not paiement and data.get("payment_id"):
             paiement = Paiement.objects.filter(pk=data.get("payment_id")).first()
+
+        if not paiement and legacy_escrow_id:
+            paiement = Paiement.objects.filter(escrow_id=legacy_escrow_id).first()
 
         logger.info("GeniusPay webhook reçu : événement=%s | paiement=%s | event_id=%s", event, paiement, event_id)
 
@@ -256,17 +265,16 @@ class GeniusPayService:
             )
 
         if not paiement:
-            logger.warning("Paiement introuvable pour webhook : %s (escrow_id=%s, ref=%s)", event, escrow_id, reference)
+            logger.warning("Paiement introuvable pour webhook : %s (reference=%s)", event, reference)
             return True, f"Événement '{event}' reçu mais paiement introuvable."
 
         from django.db import transaction as db_transaction
         with db_transaction.atomic():
             paiement = Paiement.objects.select_for_update().get(pk=paiement.pk)
 
-            # Si l'escrow_id n'était pas encore enregistré, on l'associe
-            if escrow_id and not paiement.escrow_id:
-                paiement.escrow_id = escrow_id
-                paiement.save(update_fields=["escrow_id"])
+            if reference and not paiement.provider_reference:
+                paiement.provider_reference = str(reference)
+                paiement.save(update_fields=["provider_reference"])
 
             # Traitement selon l'événement
             if event == "payment.success":
@@ -276,14 +284,6 @@ class GeniusPayService:
                     paiement.save()
                     return True, f"Paiement #{paiement.pk} passé au statut BLOCKED."
                 return True, f"Paiement #{paiement.pk} déjà en statut {paiement.status}."
-
-            elif event == "cashout.completed":
-                # Les fonds ont été virés avec succès au vendeur
-                if paiement.status == "BLOCKED" or paiement.can_transition_to("RELEASED"):
-                    paiement.status = "RELEASED"
-                    paiement.save()
-                    return True, f"Paiement #{paiement.pk} passé au statut RELEASED."
-                return True, f"Paiement #{paiement.pk} statut actuel: {paiement.status}."
 
             elif event == "payment.refunded":
                 # Remboursement confirmé
@@ -297,7 +297,7 @@ class GeniusPayService:
                 logger.warning("GeniusPay paiement #{%s} a échoué/annulé/expiré: %s", paiement.pk, event)
                 return True, f"Paiement #{paiement.pk} notification échec reçue ({event})."
 
-            elif event in ("payment.initiated", "cashout.requested", "cashout.approved", "cashout.failed"):
+            elif event == "payment.initiated":
                 logger.info("GeniusPay statut étape paiement #{%s}: %s", paiement.pk, event)
                 return True, f"Événement {event} pris en compte."
 
@@ -308,50 +308,19 @@ class GeniusPayService:
 
 def auto_release_expired_escrows() -> list[int]:
     """
-    Libère automatiquement tous les paiements sous séquestre ayant dépassé le délai de 3 jours
-    sans litige ouvert (tâche planifiable via Celery ou Cron).
-    Sécurisé avec verrouillage pessimiste atomique (select_for_update).
+    Aucun payout GeniusPay documenté n'étant disponible, cette tâche ne libère
+    pas automatiquement les fonds ni ne modifie le statut des paiements.
     """
-    from django.db import transaction as db_transaction
-    from django.utils import timezone
     from .models import Paiement
 
-    now = timezone.now()
-    expired_ids = list(
-        Paiement.objects.filter(
-            status="BLOCKED",
-            auto_release_at__isnull=False,
-            auto_release_at__lte=now,
-        ).values_list("pk", flat=True)
-    )
-
-    released_ids = []
-    service = GeniusPayService()
-
-    for pk in expired_ids:
-        with db_transaction.atomic():
-            try:
-                p_locked = Paiement.objects.select_for_update().get(pk=pk)
-            except Paiement.DoesNotExist:
-                continue
-
-            if p_locked.status != "BLOCKED":
-                continue
-
-            # Sécurité : Si un litige est ouvert ou en révision, ne jamais libérer automatiquement
-            if hasattr(p_locked, "dispute") and p_locked.dispute.status in ["OPEN", "UNDER_REVIEW"]:
-                logger.warning("Paiement #%s suspendu : litige actif présent (%s).", p_locked.pk, p_locked.dispute.status)
-                continue
-
-            try:
-                if p_locked.escrow_id:
-                    service.release_funds(p_locked.escrow_id)
-            except GeniusPayError as exc:
-                logger.error("Auto-release GeniusPay échoué pour paiement #%s : %s", p_locked.pk, exc)
-
-            p_locked.status = "RELEASED"
-            p_locked.save(update_fields=["status", "updated_at"])
-            released_ids.append(p_locked.pk)
-            logger.info("Auto-release réussi pour le paiement #%s (délai 3 jours écoulé)", p_locked.pk)
-
-    return released_ids
+    expired_count = Paiement.objects.filter(
+        status="BLOCKED",
+        auto_release_at__isnull=False,
+        auto_release_at__lte=timezone.now(),
+    ).count()
+    if expired_count:
+        logger.warning(
+            "%s paiement(s) ont dépassé le délai de séquestre, mais aucun payout GeniusPay n'est configuré.",
+            expired_count,
+        )
+    return []

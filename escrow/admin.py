@@ -14,10 +14,10 @@ class CustomUserAdmin(UserAdmin):
 
 @admin.register(Paiement)
 class PaiementAdmin(admin.ModelAdmin):
-    list_display   = ("id", "buyer", "seller", "amount", "fee_amount", "net_amount", "status", "escrow_id", "auto_release_at", "created_at")
+    list_display   = ("id", "buyer", "seller", "amount", "fee_amount", "net_amount", "status", "provider_reference", "auto_release_at", "created_at")
     list_filter    = ("status", "created_at")
-    search_fields  = ("buyer__username", "seller__username", "escrow_id")
-    readonly_fields = ("commission_rate", "fee_amount", "net_amount", "escrow_id", "created_at", "updated_at")
+    search_fields  = ("buyer__username", "seller__username", "provider_reference")
+    readonly_fields = ("commission_rate", "fee_amount", "net_amount", "provider_reference", "checkout_url", "created_at", "updated_at")
 
     def has_delete_permission(self, request, obj=None):
         return False

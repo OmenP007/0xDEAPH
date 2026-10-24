@@ -130,6 +130,8 @@ class Paiement(models.Model):
     commission_rate  = models.DecimalField(max_digits=5, decimal_places=4, default=DEFAULT_COMMISSION_RATE, help_text="Taux de commission (ex: 0.0100 = 1%).")
     fee_amount       = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Commission 0xSeq de 1% en FCFA.")
     net_amount       = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), help_text="Montant net reversé au vendeur en FCFA.")
+    provider_reference = models.CharField(max_length=64, blank=True, db_index=True)
+    checkout_url      = models.URLField(max_length=1000, blank=True)
     escrow_id        = models.CharField(max_length=255, blank=True)
     status           = models.CharField(max_length=10, choices=STATUS, default="CREATED")
     auto_release_at  = models.DateTimeField(null=True, blank=True, help_text="Date limite de libération automatique (3 jours après BLOCKED).")
