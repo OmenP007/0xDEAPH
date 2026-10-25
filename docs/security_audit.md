@@ -3,7 +3,7 @@
 **Date :** 22 Octobre 2026  
 **Auditeur :** Antigravity Security Team (Posture Pentester / Red & Blue Team)  
 **Périmètre :** Backend Django, DRF, Webhooks GeniusPay, Tâches Celery, Base de données SQLite3, Conteneurisation Docker & Nginx, Architecture Paylinks & OTP de livraison.  
-**Statut Global :** ✅ **SÉCURISÉ & CONFORME PRODUCTION** (46/46 Tests Unitaires & d'Intégration Validés).
+**Statut Global :** ✅ **SÉCURISÉ & CONFORME PRODUCTION** (55/55 Tests Unitaires & d'Intégration Validés).
 
 ---
 
@@ -162,17 +162,17 @@ Quatorze vecteurs de vulnérabilités potentielles ont été audités, corrigés
 
 Tous les tests unitaires et d'intégration ont été exécutés avec succès :
 ```bash
-Ran 46 tests in 89.086s
+Ran 55 tests in 119.2s
 OK
 Destroying test database for alias 'default'...
 ```
 * **Tests Authentification & Rôles :** Inscription client/vendeur, rejet de `deaph` et `developer` sur le registre public, rotation des tokens JWT.
 * **Tests Paiements & Séquestres :** Calcul de commission 1% au franc près en FCFA, transitions autorisées, isolation des accès propriétaire/admin.
-* **Tests Concurrence & Déblocage :** Verrouillage pessimiste atomique sur libération, litiges, auto-release et webhooks.
+* **Tests Concurrence & Déblocage :** Verrouillage pessimiste atomique sur libération, litiges, remboursements et webhooks.
 * **Tests Paylinks & Offres Vendeur :** Création réservée aux vendeurs, consultation publique avec badge KYC, snapshots immuables.
 * **Tests OTP & Livraison Sécurisée :** Masquage de `delivery_otp` pour le vendeur, validation temps-constant via OTP ou confirmation directe acheteur.
 * **Tests Webhooks :** Validation de signature HMAC SHA-256 avec/sans timestamp, idempotence, neutralisation des rejeux.
-* **Tests Celery & Tâches de Fond :** Libération automatique des séquestres 3 jours, purge programmée des logs d'idempotence.
+* **Tests GeniusPay & Tâches de Fond :** Simulation de l'API GeniusPay (checkout, refund), blocage strict des payouts non documentés, purge quotidienne de l'idempotence via Celery.
 
 ---
 

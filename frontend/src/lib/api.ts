@@ -1,32 +1,47 @@
-import { EscrowTransaction, Offer, UserProfile } from '@/types/escrow';
+import {
+  EscrowTransaction,
+  Offer,
+  Dispute,
+  APIKeyItem,
+  KYCVerification,
+  UserProfile,
+  DashboardStats,
+} from '@/types/escrow';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 class ApiClient {
   private token: string | null = null;
+  private isDemoMode: boolean = false;
 
   constructor() {
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem('0xseq_token');
-    }
+    this.token = localStorage.getItem('trust_token');
+    this.isDemoMode = localStorage.getItem('trust_demo_mode') === 'true';
   }
 
   setToken(token: string | null) {
     this.token = token;
-    if (typeof window !== 'undefined') {
-      if (token) {
-        localStorage.setItem('0xseq_token', token);
-      } else {
-        localStorage.removeItem('0xseq_token');
-      }
+    if (token) {
+      localStorage.setItem('trust_token', token);
+    } else {
+      localStorage.removeItem('trust_token');
     }
   }
 
   getToken(): string | null {
-    if (!this.token && typeof window !== 'undefined') {
-      this.token = localStorage.getItem('0xseq_token');
+    if (!this.token) {
+      this.token = localStorage.getItem('trust_token');
     }
     return this.token;
+  }
+
+  setDemoMode(val: boolean) {
+    this.isDemoMode = val;
+    localStorage.setItem('trust_demo_mode', String(val));
+  }
+
+  getDemoMode(): boolean {
+    return this.isDemoMode;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -40,44 +55,43 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${currentToken}`;
     }
 
-    try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers,
-      });
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.detail ||
-            errorData.message ||
-            errorData.non_field_errors?.[0] ||
-            `Erreur API (${response.status})`
-        );
-      }
-
-      return await response.json();
-    } catch (err: unknown) {
-      // Re-throw for handling
-      throw err;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.detail ||
+          errorData.message ||
+          errorData.non_field_errors?.[0] ||
+          Object.values(errorData)[0] ||
+          `Erreur API (${response.status})`
+      );
     }
+
+    return await response.json();
   }
 
-  // Auth endpoints
-  async login(username: string, password: string): Promise<{ access: string; refresh: string }> {
+  // ─── AUTH ──────────────────────────────────────────────────────────────────
+  async login(username: string, password: string): Promise<{ access: string; refresh: string; user?: UserProfile }> {
     const res = await this.request<{ access: string; refresh: string }>('/api/token/', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
     this.setToken(res.access);
+    if (res.refresh) {
+      localStorage.setItem('trust_refresh_token', res.refresh);
+    }
     return res;
   }
 
   async register(data: {
     username: string;
     email: string;
-    phone: string;
     password: string;
+    password2: string;
     role?: string;
   }): Promise<UserProfile> {
     return this.request<UserProfile>('/api/register/', {
@@ -86,16 +100,27 @@ class ApiClient {
     });
   }
 
-  // Payments / Escrow
+  async logout() {
+    this.setToken(null);
+    localStorage.removeItem('trust_refresh_token');
+    localStorage.removeItem('trust_user');
+  }
+
+  // ─── PAYMENTS / ESCROW ─────────────────────────────────────────────────────
   async getPayments(): Promise<EscrowTransaction[]> {
     return this.request<EscrowTransaction[]>('/api/payments/');
   }
 
+  async getPayment(id: string | number): Promise<EscrowTransaction> {
+    return this.request<EscrowTransaction>(`/api/payments/${id}/`);
+  }
+
   async createPayment(data: {
-    seller_username: string;
     amount: number;
+    seller_username: string;
     item_title: string;
     item_description?: string;
+    delivery_terms?: string;
   }): Promise<EscrowTransaction> {
     return this.request<EscrowTransaction>('/api/payments/', {
       method: 'POST',
@@ -103,23 +128,39 @@ class ApiClient {
     });
   }
 
-  async confirmDelivery(paymentId: string | number, otp?: string): Promise<{ status: string }> {
-    return this.request<{ status: string }>(`/api/payments/${paymentId}/confirm-delivery/`, {
+  async confirmDelivery(id: string | number, otp?: string): Promise<{ status: string; detail?: string }> {
+    return this.request<{ status: string; detail?: string }>(`/api/payments/${id}/confirm-delivery/`, {
       method: 'POST',
       body: JSON.stringify(otp ? { otp } : {}),
     });
   }
 
-  async openDispute(paymentId: string | number, reason: string, details: string): Promise<unknown> {
-    return this.request(`/api/payments/${paymentId}/dispute/`, {
+  async releasePayment(id: string | number): Promise<EscrowTransaction> {
+    return this.request<EscrowTransaction>(`/api/payments/${id}/release/`, {
+      method: 'POST',
+    });
+  }
+
+  async refundPayment(id: string | number): Promise<EscrowTransaction> {
+    return this.request<EscrowTransaction>(`/api/payments/${id}/refund/`, {
+      method: 'POST',
+    });
+  }
+
+  async openDispute(id: string | number, reason: string, details: string): Promise<Dispute> {
+    return this.request<Dispute>(`/api/payments/${id}/dispute/`, {
       method: 'POST',
       body: JSON.stringify({ reason, details }),
     });
   }
 
-  // Offers / Paylinks (Nouvel endpoint du backend)
+  // ─── OFFERS / PAYLINKS ─────────────────────────────────────────────────────
   async getOffers(): Promise<Offer[]> {
     return this.request<Offer[]>('/api/offers/');
+  }
+
+  async getOffer(code: string): Promise<Offer> {
+    return this.request<Offer>(`/api/offers/${code}/`);
   }
 
   async createOffer(data: {
@@ -137,6 +178,51 @@ class ApiClient {
   async checkoutOffer(code: string): Promise<EscrowTransaction> {
     return this.request<EscrowTransaction>(`/api/offers/${code}/checkout/`, {
       method: 'POST',
+    });
+  }
+
+  // ─── DISPUTES ──────────────────────────────────────────────────────────────
+  async getDisputes(): Promise<Dispute[]> {
+    return this.request<Dispute[]>('/api/disputes/');
+  }
+
+  // ─── KYC ───────────────────────────────────────────────────────────────────
+  async getKYC(): Promise<KYCVerification | null> {
+    try {
+      const res = await this.request<KYCVerification[]>('/api/kyc/');
+      return Array.isArray(res) && res.length > 0 ? res[0] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async submitKYC(data: {
+    id_type: 'CNI' | 'PASSPORT' | 'PERMIS';
+    id_number: string;
+    full_name: string;
+    document_url: string;
+  }): Promise<KYCVerification> {
+    return this.request<KYCVerification>('/api/kyc/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ─── API KEYS ──────────────────────────────────────────────────────────────
+  async getAPIKeys(): Promise<APIKeyItem[]> {
+    return this.request<APIKeyItem[]>('/api/keys/');
+  }
+
+  async createAPIKey(data: { name: string; scopes: string[]; expires_at?: string }): Promise<APIKeyItem> {
+    return this.request<APIKeyItem>('/api/keys/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async revokeAPIKey(id: string | number): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/api/keys/${id}/revoke/`, {
+      method: 'DELETE',
     });
   }
 }

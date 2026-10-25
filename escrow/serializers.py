@@ -1,4 +1,5 @@
 import hashlib
+from decimal import Decimal
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -279,6 +280,16 @@ class PaiementStatusSerializer(serializers.ModelSerializer):
                 f"Transition {paiement.status} → {new_status} non autorisée."
             )
         return new_status
+
+
+class GeniusPayRefundSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        required=False,
+    )
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=200)
 
 
 # ─── Clé API ──────────────────────────────────────────────────────────────────

@@ -1,15 +1,15 @@
-# 0xSeq (0xEscrow) • Plateforme de Séquestre Automatisé
+# 0xSeq (0xEscrow) • Paiements & workflow de livraison
 
 [![Django](https://img.shields.io/badge/Django-6.1-0C4B33?style=for-the-badge&logo=django&logoColor=white)](https://www.djangoproject.com/)
 [![DRF](https://img.shields.io/badge/DRF-3.18-A30000?style=for-the-badge&logo=django&logoColor=white)](https://www.django-rest-framework.org/)
 [![Celery](https://img.shields.io/badge/Celery-5.6-37814A?style=for-the-badge&logo=celery&logoColor=white)](https://docs.celeryq.dev/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Tests-46%2F46%20Passing-success?style=for-the-badge)](https://github.com/)
+[![Tests](https://img.shields.io/badge/Tests-55%2F55%20Passing-success?style=for-the-badge)](https://github.com/)
 
-**0xSeq** est une infrastructure backend de paiement avec **séquestre (escrow) automatisé, sécurisé et interopérable**, conçue pour l'écosystème e-commerce et les transactions peer-to-peer en **FCFA (XOF)**. 
+**0xSeq** est un backend de paiement et de suivi de livraison pour l'e-commerce en **FCFA (XOF)**.
 
-Elle garantit la confiance mutuelle entre acheteurs et vendeurs en séquestrant les fonds de la commande jusqu'à la confirmation de la livraison, avec un mécanisme d'auto-libération après 3 jours et un module d'arbitrage en cas de litige.
+> **Limite actuelle de l'intégration financière :** la documentation GeniusPay fournie couvre la création de paiements checkout et les remboursements, mais pas la mise sous séquestre ni le payout vers un vendeur. `BLOCKED` est donc un état interne; les fonds ne sont pas garantis comme détenus par 0xSeq. Les actions de libération et l'auto-release restent bloquées. Ne pas utiliser comme séquestre de production avant d'avoir un endpoint payout officiel et un accord de conservation des fonds.
 
 ---
 
@@ -17,9 +17,9 @@ Elle garantit la confiance mutuelle entre acheteurs et vendeurs en séquestrant 
 
 ### 1. Cycle de Séquestre & Automatisation
 - **Machine à états transactionnelle stricte :** `CREATED` ➔ `BLOCKED` ➔ `RELEASED` / `REFUNDED` / `DISPUTED`.
-- **Timer de Sécurité (3 Jours) :** Dès passage à `BLOCKED`, `auto_release_at = now + 3 jours` est programmé.
-- **Worker Celery Beat :** Déblocage automatique exécuté toutes les 15 minutes sans intervention humaine (`task_auto_release_expired_escrows`).
-- **Verrouillage Pessimiste Atomique :** Protection anti-concurrence (`select_for_update()`) empêchant les doubles déblocages et les race conditions.
+- **État de paiement :** `CREATED` puis `BLOCKED` après confirmation du webhook GeniusPay; cet état est local et ne signifie pas que GeniusPay détient les fonds en escrow.
+- **Payout :** indisponible avec les endpoints actuellement documentés; les demandes de libération et l'auto-release ne changent pas le statut en `RELEASED`.
+- **Remboursement :** endpoint GeniusPay documenté sur la référence de transaction, disponible pour les paiements admissibles.
 
 ### 2. Architecture Bidirectionnelle & Liens de Paiement (Paylinks)
 - **Initiateur flexible :** Les transactions peuvent être initiées soit par l'acheteur, soit directement par le vendeur via une offre.
@@ -27,7 +27,7 @@ Elle garantit la confiance mutuelle entre acheteurs et vendeurs en séquestrant 
 - **Zéro risque d'erreur de destinataire :** L'acheteur ne saisit aucun numéro de compte ou de téléphone Mobile Money. Le backend Django rattache automatiquement le paiement au vendeur vérifié associé à l'offre.
 - **Instantané Immuable (Price & Terms Snapshot) :** Le titre, la description et le prix en FCFA sont figés dans `Paiement` au moment de la commande pour empêcher toute falsification ultérieure par le vendeur.
 - **Badge de Confiance KYC Public :** La consultation publique d'un Paylink (`GET /api/offers/{code}/`) expose le statut KYC vérifié du vendeur sans authentification préalable.
-- **Validation de Livraison Sécurisée (OTP Livreur) :** Génération d'un code secret à 6 chiffres (`delivery_otp`) transmis à l'acheteur. La libération des fonds s'opère soit directement par l'acheteur, soit par le vendeur/livreur indépendant saisissant ce code OTP.
+- **Validation de Livraison Sécurisée (OTP Livreur) :** Génération d'un code secret à 6 chiffres (`delivery_otp`) transmis à l'acheteur. La libération des fonds s'opère soit directement par l'acheteur, soit par le vendeur/livreur saisissant ce code OTP *(le socle d'API est validé ; l'expédition par passerelle SMS/WhatsApp et la politique d'expiration seront intégrées plus tard)*.
 
 ### 3. Modèle Économique & Commissions en FCFA
 - **Devise officielle :** FCFA (code standard `XOF` / zone UEMOA).
@@ -119,7 +119,7 @@ python manage.py runserver
 # Terminal 1 : Worker
 celery -A config worker --loglevel=info
 
-# Terminal 2 : Scheduler Beat (libération automatique toutes les 15 min)
+# Terminal 2 : Scheduler Beat (purge périodique des journaux)
 celery -A config beat --loglevel=info
 ```
 
@@ -130,7 +130,7 @@ celery -A config beat --loglevel=info
 La configuration `docker-compose.yml` orchestre l'ensemble de la pile de production :
 - `web` : Django servi par Gunicorn (3 workers, 2 threads) adossé à SQLite persistant.
 - `celery_worker` : Traitement asynchrone des tâches.
-- `celery_beat` : Ordonnanceur périodique (auto-release toutes les 15 minutes).
+- `celery_beat` : Ordonnanceur périodique (purge des journaux d'idempotence; aucun payout n'est planifié).
 - `redis` : Cache et courtier de messages.
 - `nginx` : Reverse proxy HTTP/HTTPS avec support Let's Encrypt / Certbot.
 - `postgres` : Conteneur PostgreSQL 16 prêt à l'emploi via profil `--profile postgres`.
@@ -162,11 +162,11 @@ Consultez le guide [docs/checklist_production.md](docs/checklist_production.md) 
 | `/api/offers/{code}/checkout/` | `POST` | Acheteur | Commande directe sur Paylink (instantané immuable + séquestre) |
 | `/api/payments/` | `GET` / `POST` | Client / Vendeur | Liste et création de séquestre (commission 1% FCFA) |
 | `/api/payments/{id}/` | `GET` | Parties prenantes | Consultation détaillée d'un séquestre |
-| `/api/payments/{id}/release/` | `POST` | Acheteur | Libération des fonds au vendeur (verrouillé atomiquement) |
+| `/api/payments/{id}/release/` | `POST` | Acheteur | Non disponible tant que GeniusPay ne documente pas le payout |
 | `/api/payments/{id}/refund/` | `POST` | Administrateur | Remboursement de l'acheteur |
 | `/api/payments/{id}/dispute/` | `POST` | Acheteur | Ouverture d'un litige suspendant le timer |
-| `/api/payments/{id}/confirm-delivery/` | `POST` | Acheteur / Livreur | Confirmation de livraison physique (directe ou via OTP 6 chiffres) |
-| `/api/payments/auto-release/` | `POST` | Administrateur | Déclencheur manuel du déblocage des séquestres > 3j |
+| `/api/payments/{id}/confirm-delivery/` | `POST` | Acheteur / Livreur | Vérification OTP; ne libère pas les fonds sans payout provider |
+| `/api/payments/auto-release/` | `POST` | Administrateur | Désactivé tant qu'un endpoint payout n'est pas documenté |
 | `/api/disputes/{id}/resolve/` | `POST` | Administrateur | Arbitrage souverain du litige (`release` ou `refund`) |
 | `/api/kyc/` | `GET` / `POST` | Authentifié | Consultation et soumission de pièce d'identité |
 | `/api/kyc/{id}/review/` | `POST` | Administrateur | Validation ou rejet motivé d'un dossier KYC |
@@ -186,14 +186,14 @@ Consultez le guide [docs/checklist_production.md](docs/checklist_production.md) 
 
 ## 🧪 Tests Automatisés
 
-Le projet comprend une suite complète de **46 tests d'intégration et unitaires**, couvrant la totalité des flux critiques (authentification, séquestres, litiges, auto-release, webhooks, paylinks, snapshots et OTP) :
+Le projet comprend une suite complète de **55 tests d'intégration et unitaires**, couvrant la totalité des flux critiques (authentification, séquestres, litiges, auto-release, webhooks, paylinks, snapshots et OTP) :
 
 ```bash
 python manage.py test escrow
 ```
 
 ```text
-Ran 46 tests in 89.1s
+Ran 55 tests in 119.2s
 OK
 Destroying test database for alias 'default'...
 ```

@@ -1,5 +1,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from decimal import Decimal
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -88,6 +90,15 @@ class PaiementApiTests(APITestCase):
     def setUp(self):
         self.buyer  = make_user("buyer",  "client")
         self.seller = make_user("seller", "seller")
+        self.provider_patcher = patch(
+            "escrow.views.GeniusPayService.initiate_payment",
+            return_value={
+                "reference": "MTX-TEST123",
+                "checkout_url": "https://geniuspay.ci/checkout/MTX-TEST123",
+            },
+        )
+        self.provider_patcher.start()
+        self.addCleanup(self.provider_patcher.stop)
 
     def test_create_uses_logged_in_buyer_and_default_status(self):
         self.client.force_authenticate(user=self.buyer)
@@ -109,6 +120,9 @@ class PaiementApiTests(APITestCase):
         self.assertEqual(payment.buyer, self.buyer)
         self.assertEqual(payment.status, "CREATED")
         self.assertEqual(payment.escrow_id, "")
+        self.assertEqual(payment.provider_reference, "MTX-TEST123")
+        self.assertEqual(payment.checkout_url, "https://geniuspay.ci/checkout/MTX-TEST123")
+        self.assertEqual(response.data["checkout_url"], payment.checkout_url)
 
     def test_list_only_shows_payments_involving_logged_in_user(self):
         other_buyer  = make_user("other-buyer",  "client")
@@ -153,7 +167,7 @@ class PaiementTransitionTests(APITestCase):
 
         self.payment = Paiement.objects.create(
             buyer=self.buyer, seller=self.seller, amount="100.00",
-            status="BLOCKED", escrow_id="test-escrow-123",
+            status="BLOCKED", provider_reference="MTX-TRANSITION123", escrow_id="test-escrow-123",
         )
 
     def test_allowed_transitions(self):
@@ -182,10 +196,34 @@ class PaiementTransitionTests(APITestCase):
         response = self.client.post(f"/api/payments/{self.payment.pk}/release/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_buyer_release_stays_blocked_without_provider_payout(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(f"/api/payments/{self.payment.pk}/release/")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, "BLOCKED")
+
     def test_non_admin_cannot_refund(self):
         self.client.force_authenticate(user=self.buyer)
         response = self.client.post(f"/api/payments/{self.payment.pk}/refund/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_refund_uses_documented_provider_reference(self):
+        self.client.force_authenticate(user=self.admin)
+
+        with patch("escrow.views.GeniusPayService.refund_buyer", return_value={"status": "refunded"}) as refund:
+            response = self.client.post(
+                f"/api/payments/{self.payment.pk}/refund/",
+                {"amount": "25.00", "reason": "Refund demandé"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        refund.assert_called_once_with("MTX-TRANSITION123", amount=Decimal("25.00"), reason="Refund demandé")
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, "REFUNDED")
 
 
 # ─── Clés API ─────────────────────────────────────────────────────────────────
@@ -304,6 +342,7 @@ class GeniusPayWebhookTests(APITestCase):
             seller=self.seller,
             amount="50.00",
             status="CREATED",
+            provider_reference="MTX-TEST123",
             escrow_id="gp_escrow_999",
         )
 
@@ -330,9 +369,14 @@ class GeniusPayWebhookTests(APITestCase):
         payload = {
             "event": "payment.success",
             "data": {
-                "escrow_id": "gp_escrow_999",
-                "reference": f"0xseq-{self.payment.pk}",
-                "amount": "50.00",
+                "transaction": {
+                    "id": 456,
+                    "reference": "MTX-TEST123",
+                    "external_reference": f"0xseq-{self.payment.pk}",
+                    "amount": 50.00,
+                    "status": "completed",
+                    "metadata": {"payment_id": str(self.payment.pk)},
+                },
             },
         }
         response = self._post_webhook(payload)
@@ -340,21 +384,24 @@ class GeniusPayWebhookTests(APITestCase):
         self.payment.refresh_from_db()
         self.assertEqual(self.payment.status, "BLOCKED")
 
-    def test_webhook_cashout_completed_releases_funds(self):
+    def test_undocumented_cashout_event_does_not_release_funds(self):
         self.payment.status = "BLOCKED"
         self.payment.save()
 
         payload = {
             "event": "cashout.completed",
             "data": {
-                "escrow_id": "gp_escrow_999",
-                "reference": f"0xseq-{self.payment.pk}",
+                "transaction": {
+                    "reference": "MTX-TEST123",
+                    "external_reference": f"0xseq-{self.payment.pk}",
+                    "metadata": {"payment_id": str(self.payment.pk)},
+                },
             },
         }
         response = self._post_webhook(payload)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.payment.refresh_from_db()
-        self.assertEqual(self.payment.status, "RELEASED")
+        self.assertEqual(self.payment.status, "BLOCKED")
 
     def test_webhook_payment_refunded_refunds_funds(self):
         self.payment.status = "BLOCKED"
@@ -363,8 +410,11 @@ class GeniusPayWebhookTests(APITestCase):
         payload = {
             "event": "payment.refunded",
             "data": {
-                "escrow_id": "gp_escrow_999",
-                "reference": f"0xseq-{self.payment.pk}",
+                "transaction": {
+                    "reference": "MTX-TEST123",
+                    "external_reference": f"0xseq-{self.payment.pk}",
+                    "metadata": {"payment_id": str(self.payment.pk)},
+                },
             },
         }
         response = self._post_webhook(payload)
@@ -463,10 +513,10 @@ class CommissionAndAutoReleaseTests(APITestCase):
         p.save(update_fields=["auto_release_at"])
 
         released_ids = auto_release_expired_escrows()
-        self.assertIn(p.pk, released_ids)
+        self.assertEqual(released_ids, [])
 
         p.refresh_from_db()
-        self.assertEqual(p.status, "RELEASED")
+        self.assertEqual(p.status, "BLOCKED")
 
 
 # ─── Tests Litiges (Disputes) ─────────────────────────────────────────────────
@@ -484,6 +534,7 @@ class DisputeTests(APITestCase):
             seller=self.seller,
             amount="120.00",
             status="BLOCKED",
+            provider_reference="MTX-DISPUTE123",
             escrow_id="gp_disp_1",
         )
 
@@ -523,16 +574,86 @@ class DisputeTests(APITestCase):
         self.payment.save()
 
         self.client.force_authenticate(user=self.admin)
-        response = self.client.post(
-            f"/api/disputes/{dispute.pk}/resolve/",
-            {"action": "refund", "resolution_notes": "Litige validé en faveur du client."},
-            format="json",
-        )
+        with patch("escrow.views.GeniusPayService.refund_buyer", return_value={"status": "refunded"}) as refund:
+            response = self.client.post(
+                f"/api/disputes/{dispute.pk}/resolve/",
+                {"action": "refund", "resolution_notes": "Litige validé en faveur du client."},
+                format="json",
+            )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        refund.assert_called_once_with("MTX-DISPUTE123")
         self.payment.refresh_from_db()
         dispute.refresh_from_db()
         self.assertEqual(self.payment.status, "REFUNDED")
         self.assertEqual(dispute.status, "RESOLVED_REFUND")
+
+
+class GeniusPayServiceTests(APITestCase):
+    def setUp(self):
+        self.buyer = make_user("provider_buyer", "client")
+        self.seller = make_user("provider_seller", "seller")
+        self.payment = Paiement.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            amount="15000.00",
+            item_title="Commande de test",
+        )
+
+    @override_settings(
+        GENIUS_PAY_URL="https://geniuspay.ci/api/v1/merchant",
+        GENIUS_PAY_API_KEY="pk_sandbox_test",
+        GENIUS_PAY_SECRET="sk_sandbox_test",
+    )
+    @patch("escrow.services.requests.post")
+    def test_initiate_payment_uses_documented_route_and_headers(self, post):
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "success": True,
+            "data": {
+                "reference": "SANDBOX-MTX-123",
+                "checkout_url": "https://geniuspay.ci/checkout/SANDBOX-MTX-123",
+            },
+        }
+        post.return_value = response
+
+        from escrow.services import GeniusPayService
+        result = GeniusPayService().initiate_payment(self.payment)
+
+        self.assertEqual(result["reference"], "SANDBOX-MTX-123")
+        self.assertEqual(result["checkout_url"], "https://geniuspay.ci/checkout/SANDBOX-MTX-123")
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://geniuspay.ci/api/v1/merchant/payments")
+        self.assertEqual(kwargs["headers"]["X-API-Key"], "pk_sandbox_test")
+        self.assertEqual(kwargs["headers"]["X-API-Secret"], "sk_sandbox_test")
+        self.assertNotIn("Authorization", kwargs["headers"])
+        self.assertEqual(kwargs["json"]["external_reference"], f"0xseq-{self.payment.pk}")
+        self.assertEqual(kwargs["json"]["metadata"]["payment_id"], str(self.payment.pk))
+
+    @override_settings(
+        GENIUS_PAY_URL="https://geniuspay.ci/api/v1/merchant",
+        GENIUS_PAY_API_KEY="pk_sandbox_test",
+        GENIUS_PAY_SECRET="sk_sandbox_test",
+    )
+    @patch("escrow.services.requests.post")
+    def test_refund_uses_documented_reference_route_and_body(self, post):
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {"success": True, "data": {"status": "refunded"}}
+        post.return_value = response
+
+        from escrow.services import GeniusPayService
+        GeniusPayService().refund_buyer("SANDBOX-MTX-123", amount=Decimal("200.00"), reason="Test")
+
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://geniuspay.ci/api/v1/merchant/payments/SANDBOX-MTX-123/refund")
+        self.assertEqual(kwargs["json"], {"amount": 200.0, "reason": "Test"})
+
+    def test_release_funds_is_not_supported_without_provider_endpoint(self):
+        from escrow.services import GeniusPayError, GeniusPayService
+
+        with self.assertRaisesRegex(GeniusPayError, "(?i)aucun endpoint.*payout"):
+            GeniusPayService().release_funds("SANDBOX-MTX-123")
 
 
 # ─── Tests Authentification par Clé API (X-API-Key) ───────────────────────────
@@ -727,12 +848,12 @@ class CeleryTasksAndIdempotencyTests(APITestCase):
 
         result = task_auto_release_expired_escrows.apply().get()
         self.assertEqual(result["status"], "SUCCESS")
-        self.assertIn(p1.pk, result["released_ids"])
+        self.assertEqual(result["released_ids"], [])
         self.assertNotIn(p2.pk, result["released_ids"])
 
         p1.refresh_from_db()
         p2.refresh_from_db()
-        self.assertEqual(p1.status, "RELEASED")
+        self.assertEqual(p1.status, "BLOCKED")
         self.assertEqual(p2.status, "BLOCKED")
 
     def test_webhook_idempotency_and_purge_task(self):
@@ -788,6 +909,15 @@ class OfferAndPaylinkTests(APITestCase):
         self.seller = make_user("vendeur_pro", "seller")
         self.buyer = make_user("acheteur_client", "client")
         self.stranger = make_user("inconnu_user", "client")
+        self.provider_patcher = patch(
+            "escrow.views.GeniusPayService.initiate_payment",
+            return_value={
+                "reference": "MTX-TEST123",
+                "checkout_url": "https://geniuspay.ci/checkout/MTX-TEST123",
+            },
+        )
+        self.provider_patcher.start()
+        self.addCleanup(self.provider_patcher.stop)
 
     def test_seller_create_offer(self):
         self.client.force_authenticate(user=self.seller)
@@ -873,6 +1003,8 @@ class OfferAndPaylinkTests(APITestCase):
         self.assertEqual(float(data["amount"]), 300000.0)
         self.assertEqual(float(data["fee_amount"]), 3000.0)  # 1% de 300 000
         self.assertEqual(float(data["net_amount"]), 297000.0)
+        self.assertEqual(data["provider_reference"], "MTX-TEST123")
+        self.assertEqual(data["checkout_url"], "https://geniuspay.ci/checkout/MTX-TEST123")
 
         # Vérification OTP à 6 chiffres
         otp = data.get("delivery_otp")
@@ -936,15 +1068,16 @@ class OfferAndPaylinkTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("invalide", str(response.data))
 
-        # 4. Le vendeur valide avec le BON OTP -> 200 OK et statut RELEASED
+        # Le bon OTP est accepté, mais GeniusPay ne documente pas l'endpoint payout.
         response = self.client.post(
             f"/api/payments/{paiement_id}/confirm-delivery/",
             {"otp": paiement.delivery_otp},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("payout", str(response.data).lower())
         paiement.refresh_from_db()
-        self.assertEqual(paiement.status, "RELEASED")
+        self.assertEqual(paiement.status, "BLOCKED")
 
     def test_buyer_direct_delivery_confirmation(self):
         offer = Offer.objects.create(
@@ -962,9 +1095,9 @@ class OfferAndPaylinkTests(APITestCase):
         # L'acheteur valide directement sans avoir besoin de renseigner l'OTP
         self.client.force_authenticate(user=self.buyer)
         response = self.client.post(f"/api/payments/{p.pk}/confirm-delivery/", {}, format="json")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         p.refresh_from_db()
-        self.assertEqual(p.status, "RELEASED")
+        self.assertEqual(p.status, "BLOCKED")
 
     def test_client_cannot_create_offer(self):
         self.client.force_authenticate(user=self.buyer)

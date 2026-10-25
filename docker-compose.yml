@@ -81,7 +81,7 @@ services:
     networks:
       - 0xseq_network
 
-  # ─── 4. Scheduler Celery Beat (Auto-Release toutes les 15 min) ─────────────
+  # ─── 4. Scheduler Celery Beat (Purge quotidienne des journaux webhooks) ─────
   celery_beat:
     build:
       context: .

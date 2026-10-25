@@ -6,10 +6,10 @@ Ce document récapitule les fonctionnalités déployées sur 0xSeq et le journal
 
 ## 🏆 Statut Global du Projet
 
-* **Suite de tests automatisés :** 46/46 validés (100% succès)
+* **Suite de tests automatisés :** 55/55 validés (100% succès)
 * **Devise :** FCFA (XOF)
 * **Taux de commission :** 1.00%
-* **Délai de séquestre :** 3 jours (avec Auto-Release Celery Beat)
+* **Limite GeniusPay :** l'API documentée fournit le checkout et le refund, mais pas le payout vendeur. `BLOCKED` reste un état interne et l'auto-release est désactivé.
 * **Sécurité & Pentest :** Verrouillage pessimiste atomique, Anti-replay webhooks, Rate limiting, Headers stricts (CSP, HSTS).
 * **Déploiement :** Docker Compose (Django Gunicorn, Redis 7, Celery Worker, Celery Beat, Nginx SSL, SQLite3 persistant).
 
@@ -29,9 +29,24 @@ Ce document récapitule les fonctionnalités déployées sur 0xSeq et le journal
 | **2.3** | Endpoint Vendeur : `POST /api/offers/` & `GET /api/offers/` (Gestion des offres) | `[FAIT]` |
 | **2.4** | Endpoint Public Paylink : `GET /api/offers/{code}/` (Consultation sans friction) | `[FAIT]` |
 | **2.5** | Endpoint Checkout : `POST /api/offers/{code}/checkout/` (Initiation séquestre automatique) | `[FAIT]` |
-| **2.6** | Endpoint OTP Livraison : `POST /api/payments/{id}/confirm-delivery/` (Validation par code) | `[FAIT]` |
+| **2.6** | Endpoint OTP Livraison : `POST /api/payments/{id}/confirm-delivery/` (Socle validé ; gestion avancée du cycle OTP reportée à plus tard) | `[FAIT (Socle)]` |
 | **3.1** | Rédaction et validation de la suite de tests unitaires pour le flux Offre/Paylink/OTP | `[FAIT]` |
-| **3.2** | Validation globale de non-régression (Suite complète de tests passants : 46/46) | `[FAIT]` |
+| **3.2** | Validation globale de non-régression (Suite complète de tests passants : 55/55) | `[FAIT]` |
+
+---
+
+## 🔮 Évolutions Futures & Chantiers Reportés (Roadmap)
+
+### 1. Gestion Avancée du Cycle de Vie de l'OTP de Livraison `[REPORTÉ / PROCHAINE ÉTAPE]`
+Le socle technique minimal est d'ores et déjà en place (génération du champ `delivery_otp`, masquage vendeur, et validation `confirm-delivery` à temps constant). La gestion opérationnelle complète sera développée plus tard :
+- **Passerelle d'envoi SMS / WhatsApp :** Intégration d'une API tierce (Orange SMS, Twilio, etc.) pour expédier le code OTP directement sur le numéro mobile de l'acheteur dès la prise en charge du colis.
+- **Expiration & Régénération :** Durée de vie limitée de l'OTP, bouton de renvoi/renouvellement par l'acheteur, et verrouillage automatique après 3 tentatives infructueuses (protection anti-bruteforce).
+- **Espace Livreur Tiers :** Interface web mobile éphémère (sans création de compte obligatoire) permettant à un coursier ou transporteur indépendant de saisir le code client lors de la remise en main propre.
+- **Signature & Alternative de Secours :** Procédure de déblocage manuel en cas de problème de réseau ou d'indisponibilité du SMS (validation directe depuis l'espace client ou réclamation conjointe).
+
+### 2. Payout Vendeur & Décaissement Réel `[EN ATTENTE DU FOURNISSEUR]`
+- Intégration d'une API officielle de payout (GeniusPay ou prestataire agréé) pour automatiser le versement effectif sur les comptes Mobile Money / bancaires des vendeurs.
+- Réactivation de la transition vers `RELEASED` et du déclencheur périodique Celery Beat.
 
 ---
 
@@ -43,10 +58,10 @@ Ce document récapitule les fonctionnalités déployées sur 0xSeq et le journal
 - **Prélèvement automatique :** `fee_amount` (1% du montant brut) et `net_amount` (montant reversé au vendeur) calculés au franc près.
 - **Validation comptable :** Traçabilité complète enregistrée sur le modèle `Paiement`.
 
-### 2. Délais de Séquestre & Libération Automatique (3 Jours) `[FAIT]`
-- **Timer de sécurité :** Dès qu'un paiement passe à `BLOCKED`, `auto_release_at` est fixé à `now + 3 jours`.
-- **Worker Celery Beat :** Déblocage automatique toutes les 15 minutes (`task_auto_release_expired_escrows`).
-- **Suspension en cas de litige :** Tout litige ouvert annule immédiatement la libération automatique.
+### 2. Délais de Séquestre & Libération Automatique `[EN ATTENTE DU PAYOUT PROVIDER]`
+- Le champ `auto_release_at` calcule une échéance interne, mais aucun payout GeniusPay n'est documenté pour transférer les fonds au vendeur.
+- Le scheduler Celery ne déclenche donc plus de libération automatique.
+- Une libération effective nécessite l'endpoint payout et le contrat de conservation des fonds du fournisseur.
 
 ### 3. Module KYC (Know Your Customer) `[FAIT]`
 - **Modèle `KYCVerification` :** CNI, Passeport, Permis de conduire.

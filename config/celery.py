@@ -15,11 +15,6 @@ app.autodiscover_tasks()
 
 # ─── Planification Celery Beat ────────────────────────────────────────────────
 app.conf.beat_schedule = {
-    # Exécution périodique toutes les 15 minutes pour libérer les séquestres expirés (3 jours)
-    'auto-release-expired-escrows-every-15m': {
-        'task': 'escrow.tasks.task_auto_release_expired_escrows',
-        'schedule': crontab(minute='*/15'),
-    },
     # Nettoyage quotidien des journaux d'événements webhooks et clés d'idempotence à 03h00 UTC
     'purge-old-webhook-idempotency-daily': {
         'task': 'escrow.tasks.task_purge_old_idempotency_logs',

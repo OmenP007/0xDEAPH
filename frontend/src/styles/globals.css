@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 260 100% 62%; /* #7B3DFF */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 187 100% 50%; /* #00E5FF */
+    --accent-foreground: 222 47% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 260 100% 62%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 214 29% 6%; /* #0B0F14 */
+    --foreground: 225 38% 97%; /* #F4F6FC */
+
+    --card: 218 25% 10%; /* #131820 */
+    --card-foreground: 225 38% 97%;
+
+    --popover: 218 25% 10%;
+    --popover-foreground: 225 38% 97%;
+
+    --primary: 260 100% 62%; /* #7B3DFF */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 19% 15%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 19% 15%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 187 100% 50%; /* #00E5FF */
+    --accent-foreground: 214 29% 6%;
+
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 19% 18%;
+    --input: 217 19% 18%;
+    --ring: 260 100% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased selection:bg-[#7B3DFF]/30 selection:text-white;
+    min-height: 100vh;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(123, 61, 255, 0.2);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(123, 61, 255, 0.4);
+}

@@ -213,7 +213,14 @@ class GeniusPayService:
         transaction_data = data.get("transaction") or data
         metadata = transaction_data.get("metadata") or data.get("metadata") or {}
         reference = transaction_data.get("reference") or data.get("reference") or ""
-        event_id = str(payload.get("id") or payload.get("event_id") or data.get("id") or "").strip()
+        external_reference = (
+            transaction_data.get("external_reference")
+            or data.get("external_reference")
+            or (reference if re.fullmatch(r"0xseq-\d+", str(reference)) else "")
+        )
+        payment_id = metadata.get("payment_id") or metadata.get("order_id") or data.get("payment_id")
+        legacy_escrow_id = data.get("escrow_id") or ""
+        event_id = str(payload.get("id") or payload.get("event_id") or "").strip()
         if not event_id and reference:
             event_id = f"{event}:{reference}:{payload.get('timestamp', '')}"
 
@@ -223,14 +230,6 @@ class GeniusPayService:
             if existing:
                 logger.info("GeniusPay webhook déjà traité (idempotence) : event_id=%s", event_id)
                 return True, f"Événement '{event_id}' déjà traité (idempotence)."
-
-        external_reference = (
-            transaction_data.get("external_reference")
-            or data.get("external_reference")
-            or ""
-        )
-        payment_id = metadata.get("payment_id") or metadata.get("order_id")
-        legacy_escrow_id = data.get("escrow_id") or ""
 
         # Recherche du paiement correspondant
         paiement = None
@@ -244,9 +243,6 @@ class GeniusPayService:
             match = re.search(r"0xseq-(\d+)", str(external_reference))
             if match:
                 paiement = Paiement.objects.filter(pk=match.group(1)).first()
-
-        if not paiement and data.get("payment_id"):
-            paiement = Paiement.objects.filter(pk=data.get("payment_id")).first()
 
         if not paiement and legacy_escrow_id:
             paiement = Paiement.objects.filter(escrow_id=legacy_escrow_id).first()
@@ -276,28 +272,25 @@ class GeniusPayService:
                 paiement.provider_reference = str(reference)
                 paiement.save(update_fields=["provider_reference"])
 
-            # Traitement selon l'événement
             if event == "payment.success":
-                # Le client a payé -> les fonds sont bloqués sous séquestre
                 if paiement.status == "CREATED" or paiement.can_transition_to("BLOCKED"):
                     paiement.status = "BLOCKED"
                     paiement.save()
                     return True, f"Paiement #{paiement.pk} passé au statut BLOCKED."
                 return True, f"Paiement #{paiement.pk} déjà en statut {paiement.status}."
 
-            elif event == "payment.refunded":
-                # Remboursement confirmé
+            if event == "payment.refunded":
                 if paiement.status in ("CREATED", "BLOCKED") or paiement.can_transition_to("REFUNDED"):
                     paiement.status = "REFUNDED"
                     paiement.save()
                     return True, f"Paiement #{paiement.pk} passé au statut REFUNDED."
                 return True, f"Paiement #{paiement.pk} statut actuel: {paiement.status}."
 
-            elif event in ("payment.failed", "payment.cancelled", "payment.expired"):
+            if event in ("payment.failed", "payment.cancelled", "payment.expired"):
                 logger.warning("GeniusPay paiement #{%s} a échoué/annulé/expiré: %s", paiement.pk, event)
                 return True, f"Paiement #{paiement.pk} notification échec reçue ({event})."
 
-            elif event == "payment.initiated":
+            if event == "payment.initiated":
                 logger.info("GeniusPay statut étape paiement #{%s}: %s", paiement.pk, event)
                 return True, f"Événement {event} pris en compte."
 
