@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Lock, User, Eye, EyeOff, ArrowRight, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -7,10 +7,12 @@ import { useAuth } from '@/context/AuthContext';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { login, isDemoMode, toggleDemoMode } = useAuth();
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get('next') || '/dashboard';
+  const { login } = useAuth();
 
-  const [username, setUsername] = useState('abdoul_diallo');
-  const [password, setPassword] = useState('PassSecure123!');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,16 +23,8 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      if (isDemoMode) {
-        // Instant simulated login in demo mode
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 500);
-        return;
-      }
-
       await login(username, password);
-      navigate('/dashboard');
+      navigate(next);
     } catch (err: any) {
       setError(err.message || 'Identifiants incorrects. Veuillez réessayer.');
     } finally {
@@ -38,14 +32,15 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleQuickDemo = () => {
-    if (!isDemoMode) toggleDemoMode();
-    navigate('/dashboard');
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F14] flex flex-col justify-center py-12 sm:px-6 lg:px-8 transition-colors">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F14] flex flex-col justify-center py-12 sm:px-6 lg:px-8 transition-colors relative overflow-hidden">
+      {/* Ambient glow */}
+      <div
+        className="absolute top-1/3 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
+        style={{ background: 'rgba(123,61,255,0.08)' }}
+      />
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center opacity-0 animate-enter stagger-1" style={{ animationFillMode: 'forwards' }}>
         <Link to="/" className="inline-flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-[#7B3DFF]/10 flex items-center justify-center p-2">
             <img src="/logo.png" alt="TRUST Logo" className="w-full h-full object-contain" />
@@ -62,10 +57,10 @@ export const LoginPage: React.FC = () => {
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
-        <div className="bg-white dark:bg-[#131820] py-8 px-6 sm:px-10 shadow-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0 opacity-0 animate-modal-enter" style={{ animationFillMode: 'forwards', animationDelay: '120ms' }}>
+        <div className={`bg-white dark:bg-[#131820] py-8 px-6 sm:px-10 shadow-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80 transition-all duration-300 ${error ? 'animate-shake' : ''}`}>
           {error && (
-            <div className="mb-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2">
+            <div className="mb-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2 animate-enter" style={{ animationFillMode: 'forwards' }}>
               <AlertCircle size={16} className="shrink-0" />
               <span>{error}</span>
             </div>
@@ -123,17 +118,6 @@ export const LoginPage: React.FC = () => {
               <ArrowRight size={16} className="ml-1" />
             </Button>
           </form>
-
-          {/* Quick Demo Access Button */}
-          <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
-            <button
-              onClick={handleQuickDemo}
-              className="w-full py-2.5 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-500 text-xs font-semibold flex items-center justify-center gap-2 transition-all"
-            >
-              <Sparkles size={15} />
-              <span>Accès Démo Direct (Sans compte Django)</span>
-            </button>
-          </div>
 
           <div className="mt-6 text-center text-xs text-slate-500 dark:text-slate-400">
             Vous n'avez pas encore de compte ?{' '}

@@ -6,6 +6,7 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { TransactionsPage } from '@/features/transactions/TransactionsPage';
+import { EscrowListPage } from '@/features/escrow/EscrowListPage';
 import { NewEscrowPage } from '@/features/escrow/NewEscrowPage';
 import { EscrowDetailPage } from '@/features/escrow/EscrowDetailPage';
 import { OffersPage } from '@/features/offers/OffersPage';
@@ -14,6 +15,9 @@ import { WalletPage } from '@/features/wallet/WalletPage';
 import { ApiKeysPage } from '@/features/api_keys/ApiKeysPage';
 import { SecurityPage } from '@/features/security/SecurityPage';
 import { ProfilePage } from '@/features/profile/ProfilePage';
+import { NotificationsPage } from '@/features/notifications/NotificationsPage';
+import { AdminPage } from '@/features/admin/AdminPage';
+import { NotFoundPage } from '@/features/not-found/NotFoundPage';
 import { useAuth } from '@/context/AuthContext';
 
 // Protected Route Wrapper
@@ -30,6 +34,25 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// Admin Route Wrapper — requires role 'deaph'
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0B0F14]">
+        <div className="w-8 h-8 border-2 border-[#7B3DFF] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (user?.role !== 'deaph') {
+    return <Navigate to="/dashboard" replace state={{ error: 'Accès réservé aux administrateurs.' }} />;
   }
 
   return <>{children}</>;
@@ -72,7 +95,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '/escrow',
-        element: <TransactionsPage />,
+        element: <EscrowListPage />,
       },
       {
         path: '/escrow/new',
@@ -100,18 +123,26 @@ export const router = createBrowserRouter([
       },
       {
         path: '/notifications',
-        element: <DashboardPage />,
+        element: <NotificationsPage />,
       },
       {
         path: '/profile',
         element: <ProfilePage />,
       },
+      {
+        path: '/admin',
+        element: (
+          <AdminRoute>
+            <AdminPage />
+          </AdminRoute>
+        ),
+      },
     ],
   },
 
-  // Catch-all fallback
+  // Catch-all → 404
   {
     path: '*',
-    element: <Navigate to="/" replace />,
+    element: <NotFoundPage />,
   },
 ]);

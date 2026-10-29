@@ -8,6 +8,7 @@ import {
   Key,
   Bell,
   Shield,
+  ShieldAlert,
   User,
   LogOut,
   ChevronLeft,
@@ -16,9 +17,11 @@ import {
   PlusCircle,
   HelpCircle,
   Sparkles,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
+import { canCreateEscrow, canCreateOffer, canManageApiKeys, isAdmin } from '@/lib/roles';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -33,19 +36,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen,
   onCloseMobile,
 }) => {
-  const { user, logout, isDemoMode } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const navItems = [
+  const isAdminUser = isAdmin(user);
+
+  interface NavItem {
+    label: string;
+    to: string;
+    icon: LucideIcon;
+    highlight?: boolean;
+    badge?: string;
+  }
+
+  const navItems: NavItem[] = [
     { label: 'Tableau de bord', to: '/dashboard', icon: LayoutDashboard },
     { label: 'Transactions', to: '/transactions', icon: ArrowLeftRight },
     { label: 'Mes Séquestres', to: '/escrow', icon: ShieldCheck },
-    { label: 'Créer un Escrow', to: '/escrow/new', icon: PlusCircle, highlight: true },
-    { label: 'Liens Paylink', to: '/offers', icon: LinkIcon },
+    ...(canCreateEscrow(user)
+      ? [{ label: 'Créer un Escrow', to: '/escrow/new', icon: PlusCircle, highlight: true }]
+      : []),
+    ...(canCreateOffer(user)
+      ? [{ label: 'Liens Paylink', to: '/offers', icon: LinkIcon }]
+      : []),
     { label: 'Portefeuille', to: '/wallet', icon: Wallet },
-    { label: 'Clés API (Dev)', to: '/api-keys', icon: Key },
+    ...(canManageApiKeys(user)
+      ? [{ label: 'Clés API (Dev)', to: '/api-keys', icon: Key }]
+      : []),
     { label: 'Sécurité & KYC', to: '/security', icon: Shield },
-    { label: 'Notifications', to: '/notifications', icon: Bell, badge: '3' },
+    { label: 'Notifications', to: '/notifications', icon: Bell },
+    ...(isAdminUser
+      ? [{ label: 'Console Admin', to: '/admin', icon: ShieldAlert }]
+      : []),
   ];
 
   return (
@@ -104,14 +126,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Demo Mode Badge */}
-        {isDemoMode && !collapsed && (
-          <div className="mx-3 mt-3 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs flex items-center gap-2">
-            <Sparkles size={14} className="shrink-0" />
-            <span className="font-medium">Mode Démonstration Actif</span>
-          </div>
-        )}
-
         {/* Navigation list */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
           {navItems.map((item) => (
@@ -121,9 +135,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={onCloseMobile}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group relative',
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group relative',
                   isActive
-                    ? 'bg-[#7B3DFF] text-white shadow-[0_4px_12px_rgba(123,61,255,0.25)]'
+                    ? 'bg-[#7B3DFF] text-white shadow-[0_4px_14px_rgba(123,61,255,0.3)] font-semibold'
                     : item.highlight
                     ? 'bg-[#7B3DFF]/10 text-[#7B3DFF] dark:text-[#a277ff] hover:bg-[#7B3DFF]/20'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'

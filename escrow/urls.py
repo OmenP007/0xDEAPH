@@ -1,6 +1,6 @@
 from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     APIKeyListCreateView,
@@ -8,11 +8,15 @@ from .views import (
     DeveloperRegisterView,
     DeveloperTokenObtainPairView,
     DisputeDetailResolveView,
+    DisputeListView,
+    EmailOrUsernameTokenObtainPairView,
+    GeniusPayAccountView,
     GeniusPayWebhookView,
     HealthView,
     KYCDocumentView,
     KYCReviewView,
     KYCView,
+    MeView,
     OfferCheckoutView,
     OfferListCreateView,
     OfferPublicDetailView,
@@ -23,8 +27,15 @@ from .views import (
     PaiementListCreateView,
     PaiementRefundView,
     PaiementReleaseView,
+    PaiementSyncStatusView,
+    PasswordChangeView,
+    PlatformSettingsView,
     RegisterView,
     serve_documentation,
+    WalletTopupView,
+    WalletTransactionReviewView,
+    WalletView,
+    WalletWithdrawView,
 )
 
 
@@ -37,8 +48,10 @@ urlpatterns = [
 
     # ── Authentification Standard ─────────────────────────────────────────────
     path("api/register/",             RegisterView.as_view(),           name="register"),
-    path("api/token/",                TokenObtainPairView.as_view(),    name="token-obtain-pair"),
+    path("api/token/",                EmailOrUsernameTokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("api/token/refresh/",        TokenRefreshView.as_view(),       name="token-refresh"),
+    path("api/me/",                   MeView.as_view(),                 name="me"),
+    path("api/me/password/",          PasswordChangeView.as_view(),     name="me-password"),
 
     # ── Espace Développeur (Page / Auth dédiée) ───────────────────────────────
     path("api/developer/register/",   DeveloperRegisterView.as_view(),         name="developer-register"),
@@ -55,10 +68,12 @@ urlpatterns = [
     path("api/payments/<int:pk>/release/",      PaiementReleaseView.as_view(),         name="payment-release"),
     path("api/payments/<int:pk>/refund/",       PaiementRefundView.as_view(),          name="payment-refund"),
     path("api/payments/<int:pk>/dispute/",      PaiementDisputeView.as_view(),         name="payment-dispute"),
+    path("api/payments/<int:pk>/sync/",         PaiementSyncStatusView.as_view(),      name="payment-sync-status"),
     path("api/payments/<int:pk>/confirm-delivery/", PaiementConfirmDeliveryView.as_view(), name="payment-confirm-delivery"),
     path("api/payments/auto-release/",          PaiementAutoReleaseView.as_view(),     name="payment-auto-release"),
 
     # ── Litiges (Arbitrage) ───────────────────────────────────────────────────
+    path("api/disputes/",                  DisputeListView.as_view(),          name="dispute-list"),
     path("api/disputes/<int:pk>/",         DisputeDetailResolveView.as_view(), name="dispute-detail"),
     path("api/disputes/<int:pk>/resolve/", DisputeDetailResolveView.as_view(), name="dispute-resolve"),
 
@@ -70,6 +85,18 @@ urlpatterns = [
     # ── Clés API ──────────────────────────────────────────────────────────────
     path("api/keys/",                 APIKeyListCreateView.as_view(),   name="apikey-list-create"),
     path("api/keys/<int:pk>/revoke/", APIKeyRevokeView.as_view(),       name="apikey-revoke"),
+
+    # ── Portefeuille ──────────────────────────────────────────────────────────
+    path("api/wallet/",                         WalletView.as_view(),                  name="wallet"),
+    path("api/wallet/topup/",                   WalletTopupView.as_view(),             name="wallet-topup"),
+    path("api/wallet/withdraw/",                WalletWithdrawView.as_view(),          name="wallet-withdraw"),
+    path("api/wallet/transactions/<int:pk>/review/", WalletTransactionReviewView.as_view(), name="wallet-transaction-review"),
+
+    # ── Configuration plateforme ──────────────────────────────────────────────
+    path("api/platform/settings/",    PlatformSettingsView.as_view(),   name="platform-settings"),
+
+    # ── Compte marchand GeniusPay (admin) ─────────────────────────────────────
+    path("api/geniuspay/account/",    GeniusPayAccountView.as_view(),   name="geniuspay-account"),
 
     # ── Documentation OpenAPI ─────────────────────────────────────────────────
     path("api/schema/",               SpectacularAPIView.as_view(),     name="schema"),

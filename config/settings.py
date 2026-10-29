@@ -76,6 +76,7 @@ INSTALLED_APPS = [
 
 # ─── Middleware ───────────────────────────────────────────────────────────────
 MIDDLEWARE = [
+    "escrow.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Middlewares de sécurité personnalisés 0xSeq
     "escrow.middleware.SecurityHeadersMiddleware",
@@ -195,6 +196,7 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "COERCE_DECIMAL_TO_STRING": False,
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",

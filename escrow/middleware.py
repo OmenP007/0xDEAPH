@@ -11,6 +11,44 @@ from django.http import JsonResponse, HttpResponse
 logger = logging.getLogger(__name__)
 
 
+class CorsMiddleware:
+    """
+    Middleware CORS pour autoriser les requêtes cross-origin du frontend web (localhost:5173)
+    et de l'application mobile (Flutter).
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.method == "OPTIONS":
+            response = HttpResponse()
+            origin = request.headers.get("Origin", "*")
+            response["Access-Control-Allow-Origin"] = origin if origin else "*"
+            response["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response["Access-Control-Allow-Headers"] = (
+                "Authorization, Content-Type, X-CSRFToken, X-API-Key, Accept, Origin, "
+                "User-Agent, DNT, Cache-Control, X-Requested-With"
+            )
+            response["Access-Control-Allow-Credentials"] = "true"
+            response["Access-Control-Max-Age"] = "86400"
+            return response
+
+        response = self.get_response(request)
+        origin = request.headers.get("Origin")
+        if origin:
+            response["Access-Control-Allow-Origin"] = origin
+            response["Access-Control-Allow-Credentials"] = "true"
+            response["Access-Control-Allow-Headers"] = (
+                "Authorization, Content-Type, X-CSRFToken, X-API-Key, Accept, Origin, "
+                "User-Agent, DNT, Cache-Control, X-Requested-With"
+            )
+            response["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        else:
+            response["Access-Control-Allow-Origin"] = "*"
+        return response
+
+
 class SecurityHeadersMiddleware:
     """
     Injecte des en-têtes HTTP de sécurité stricts sur toutes les réponses.

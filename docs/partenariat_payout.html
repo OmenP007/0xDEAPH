@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0xSeq — Partenariat payout &amp; détention des fonds</title>
+<style>
+  :root {
+    --bg: #eef1f6;
+    --paper: #ffffff;
+    --ink: #18202f;
+    --muted: #5b6678;
+    --line: #dfe4ec;
+    --accent: #0f766e;
+    --accent-soft: #e6f4f2;
+    --warn: #b45309;
+    --warn-soft: #fff7ed;
+    --code: #0f172a;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    padding: 32px 16px 64px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .page {
+    max-width: 980px;
+    margin: 0 auto;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(16, 24, 40, .08);
+    overflow: hidden;
+  }
+  header.hero {
+    padding: 40px 44px 30px;
+    background: linear-gradient(135deg, #0b3b39 0%, #0f766e 55%, #14958a 100%);
+    color: #fff;
+  }
+  header.hero .kicker {
+    text-transform: uppercase;
+    letter-spacing: .16em;
+    font-size: 12px;
+    font-weight: 700;
+    opacity: .82;
+  }
+  header.hero h1 {
+    margin: 10px 0 8px;
+    font-size: clamp(26px, 4vw, 38px);
+    line-height: 1.15;
+    letter-spacing: -.02em;
+  }
+  header.hero p { margin: 0; max-width: 720px; color: #d8f3ef; }
+  header.hero .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 20px;
+    margin-top: 20px; font-size: 13px; color: #c9ebe6;
+  }
+  header.hero .meta b { color: #fff; font-weight: 600; }
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; padding: 12px 44px; background: #f8fafc;
+    border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted);
+  }
+  .toolbar button {
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    padding: 8px 14px; border-radius: 8px; font: inherit; cursor: pointer;
+  }
+  .toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+  main { padding: 8px 44px 40px; }
+  nav#sommaire {
+    margin: 28px 0 8px; padding: 24px 26px;
+    background: #f8fafc; border: 1px solid var(--line); border-radius: 12px;
+  }
+  nav#sommaire h2 {
+    margin: 0 0 14px; font-size: 14px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); border: 0; padding: 0;
+  }
+  nav#sommaire ol {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 24px;
+  }
+  nav#sommaire a {
+    display: flex; gap: 10px; padding: 5px 6px; border-radius: 6px;
+    color: var(--ink); text-decoration: none; font-size: 14px;
+  }
+  nav#sommaire a:hover { background: var(--accent-soft); color: var(--accent); }
+  nav#sommaire a span {
+    color: var(--accent); font-weight: 700; min-width: 22px; font-variant-numeric: tabular-nums;
+  }
+  section { margin-top: 40px; scroll-margin-top: 20px; }
+  section.preamble { margin-top: 24px; }
+  h2 {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 0 0 18px; padding-top: 18px; border-top: 2px solid var(--accent);
+    font-size: 24px; line-height: 1.25; letter-spacing: -.01em;
+  }
+  h2 .secnum {
+    flex: 0 0 auto; font-size: 13px; font-weight: 800; color: #fff;
+    background: var(--accent); border-radius: 999px; padding: 3px 10px;
+    transform: translateY(-2px);
+  }
+  h3 {
+    margin: 30px 0 10px; font-size: 18px; color: var(--accent);
+    letter-spacing: .01em;
+  }
+  h3 .num { font-variant-numeric: tabular-nums; opacity: .75; margin-right: 6px; }
+  h4 {
+    margin: 22px 0 8px; font-size: 13px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  section.preamble h4 { margin-top: 14px; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0 14px; padding-left: 26px; }
+  li { margin: 5px 0; }
+  strong, b { font-weight: 650; }
+  .check {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin: 6px 0; padding: 7px 10px; border-radius: 8px;
+    background: #fbfcfe; border: 1px solid transparent;
+  }
+  .check:hover { border-color: var(--line); background: #f8fafc; }
+  .check input {
+    margin-top: 4px; width: 17px; height: 17px; accent-color: var(--accent);
+    flex: 0 0 auto;
+  }
+  .question {
+    display: flex; gap: 12px; align-items: flex-start;
+    margin: 5px 0; padding: 6px 0;
+  }
+  .qnum {
+    flex: 0 0 auto; min-width: 40px; font-size: 12px; font-weight: 800;
+    color: var(--accent); background: var(--accent-soft);
+    border-radius: 6px; padding: 2px 6px; text-align: center;
+  }
+  .fields {
+    margin: 10px 0; padding: 12px 16px; border-left: 3px solid var(--line);
+    background: #fbfcfe; border-radius: 0 8px 8px 0; font-size: 15px;
+    line-height: 1.85;
+  }
+  .table-wrap { overflow-x: auto; margin: 16px 0; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 14.5px;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  thead th {
+    background: #f1f5f9; text-align: left; font-size: 12px;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+    padding: 10px 12px; border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:nth-child(even) { background: #fafbfc; }
+  pre.diagram, pre.aligned {
+    margin: 16px 0; padding: 18px 20px; overflow-x: auto;
+    background: var(--code); color: #e2e8f0; border-radius: 10px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px; line-height: 1.55;
+  }
+  pre.aligned { background: #f8fafc; color: var(--ink); border: 1px solid var(--line); }
+  blockquote {
+    margin: 16px 0; padding: 16px 20px; border-left: 4px solid var(--accent);
+    background: var(--accent-soft); border-radius: 0 10px 10px 0;
+    font-size: 15px;
+  }
+  .back { margin-top: 26px; font-size: 13px; }
+  .back a { color: var(--muted); text-decoration: none; }
+  .back a:hover { color: var(--accent); text-decoration: underline; }
+  footer {
+    padding: 26px 44px; background: #f8fafc; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+  @media (max-width: 760px) {
+    body { padding: 0; }
+    .page { border-radius: 0; border: 0; }
+    header.hero, .toolbar, main, footer { padding-left: 20px; padding-right: 20px; }
+    nav#sommaire ol { grid-template-columns: 1fr; }
+  }
+  @media print {
+    body { background: #fff; padding: 0; font-size: 11.5pt; }
+    .page { box-shadow: none; border: 0; max-width: none; }
+    header.hero { background: #0f766e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .toolbar { display: none; }
+    section { page-break-inside: auto; margin-top: 22px; }
+    h2, h3, h4 { page-break-after: avoid; }
+    pre.diagram, table, blockquote { page-break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="hero">
+    <div class="kicker">0xSeq — Document de travail</div>
+    <h1>Confier le séquestre et le décaissement à un prestataire agréé</h1>
+    <p>Guide pratique, checklists et plan d'action pour un fondateur solo.
+       Modèles de détention des fonds, questions à poser aux PSP/EME,
+       clauses contractuelles et évolutions techniques.</p>
+    <div class="meta">
+      <span><b>Version</b> 1.0</span>
+      <span><b>Date</b> 29 octobre 2026</span>
+      <span><b>Statut</b> À exécuter</span>
+      <span><b>Source</b> docs/partenariat_payout.txt — 821 lignes</span>
+    </div>
+  </header>
+  <div class="toolbar">
+    <span>Document autonome — aucune dépendance externe.</span>
+    <button type="button" onclick="window.print()">Imprimer / PDF</button>
+  </div>
+  <main>
+    <nav id="sommaire">
+      <h2>Sommaire</h2>
+      <ol><li><a href="#avant-propos"><span>i</span>Avant-propos</a></li><li><a href="#sec-1"><span>1</span>OBJECTIF ET PRINCIPE</a></li><li><a href="#sec-2"><span>2</span>CE QUI EST DÉJÀ EN PLACE DANS 0xSEQ</a></li><li><a href="#sec-3"><span>3</span>LES TROIS MODÈLES POSSIBLES</a></li><li><a href="#sec-4"><span>4</span>QUI PEUT ÊTRE QUALIFIÉ DE "PRESTATAIRE AGRÉÉ"</a></li><li><a href="#sec-5"><span>5</span>VÉRIFICATIONS OBLIGATOIRES AVANT TOUTE DISCUSSION</a></li><li><a href="#sec-6"><span>6</span>DOSSIER À PRÉPARER</a></li><li><a href="#sec-7"><span>7</span>QUESTIONS À POSER AU PRESTATAIRE</a></li><li><a href="#sec-8"><span>8</span>CLAUSES CONTRACTUELLES À NÉGOCIER</a></li><li><a href="#sec-9"><span>9</span>FLUX TECHNIQUE CIBLE</a></li><li><a href="#sec-10"><span>10</span>MODIFICATIONS À PRÉVOIR DANS 0xSEQ</a></li><li><a href="#sec-11"><span>11</span>PLAN D'ACTION SOLO (SEMAINE PAR SEMAINE)</a></li><li><a href="#sec-12"><span>12</span>EN ATTENDANT : MODE MANUEL RENFORCÉ</a></li><li><a href="#sec-13"><span>13</span>MODÈLE D'E-MAIL DE PRISE DE CONTACT</a></li><li><a href="#sec-14"><span>14</span>FICHE DE COMPARAISON DES PRESTATAIRES</a></li><li><a href="#sec-15"><span>15</span>POINTS DE VIGILANCE JURIDIQUE</a></li><li><a href="#sec-16"><span>16</span>LEXIQUE</a></li><li><a href="#sec-17"><span>17</span>À VÉRIFIER / SOURCES</a></li><li><a href="#sec-18"><span>18</span>PSP, P2P ET NON-DÉTENTION DES FONDS</a></li></ol>
+    </nav>
+    <section id="avant-propos" class="preamble"><h2><span class="secnum">i</span> Avant-propos</h2><div class="fields">Version    : 1.0<br>Date       : 29 octobre 2026<br>Contexte   : plateforme 0xSeq (paiement sécurisé e-commerce en FCFA / XOF)<br>Public     : fondateur solo — document de travail à exécuter plus tard<br>Statut     : À FAIRE (aucun partenariat signé à ce jour)</div>
+<h4>IMPORTANT</h4>
+<p>Ce document est un guide opérationnel, pas un avis juridique. Les décisions réglementaires (BCEAO, agrément, conservation des fonds) doivent être validées par un avocat ou un cabinet spécialisé UEMOA avant signature. Les noms de prestataires cités sont des pistes à vérifier : leur statut, leur périmètre et leurs tarifs évoluent.</p></section><section id="sec-1"><h2><span class="secnum">1</span> OBJECTIF ET PRINCIPE</h2><p>Aujourd'hui, 0xSeq libère les fonds vers un portefeuille interne, puis le vendeur demande un retrait Wave / Orange Money / MTN MoMo. Le virement externe est confirmé manuellement par un administrateur.</p>
+<p>Objectif du partenariat :</p>
+<ul>
+<li>l'argent des acheteurs ne transite plus par 0xSeq ;</li>
+<li>il est collecté et conservé par un prestataire agréé ;</li>
+<li>0xSeq donne l'instruction de payer le vendeur après livraison ;</li>
+<li>le prestataire exécute le décaissement et confirme par webhook.</li>
+</ul>
+<p>Principe directeur :</p>
+<p>"0xSeq ne détient jamais les fonds. 0xSeq orchestre la commande, le prestataire agréé détient et déplace l'argent."</p>
+<p>Cette séparation est ce qui rend le montage défendable.</p><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-2"><h2><span class="secnum">2</span> CE QUI EST DÉJÀ EN PLACE DANS 0xSEQ</h2><p>Déjà implémenté et testé :</p>
+<label class="check"><input type="checkbox" checked disabled><span>Checkout GeniusPay (POST /payments) et remboursement.</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Webhooks payment.success / payment.refunded.</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Machine à états : CREATED -&gt; BLOCKED -&gt; RELEASED / REFUNDED / DISPUTED.</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Libération vers le portefeuille interne du vendeur.</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Auto-release des séquestres expirés vers ce portefeuille.</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Demande de retrait Wave / Orange Money / MTN MoMo (statut PENDING).</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Confirmation ou rejet du retrait par un administrateur.</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Réconciliation de secours via GET /payments/{reference}.</span></label>
+<label class="check"><input type="checkbox" checked disabled><span>Suite de tests backend (103 tests).</span></label>
+<p>Ce qui manque :</p>
+<label class="check"><input type="checkbox" disabled><span>Un dépositaire agréé qui conserve réellement les fonds.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Un décaissement automatique vers Wave / Orange / MTN.</span></label>
+<label class="check"><input type="checkbox" disabled><span>La réconciliation automatique des payouts.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Le cadre contractuel et conformité (KYC vendeurs, AML, etc.).</span></label><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-3"><h2><span class="secnum">3</span> LES TROIS MODÈLES POSSIBLES</h2><h4>MODÈLE A — Compte marchand EME / PSP  (le plus simple)</h4>
+<div class="fields">Qui détient les fonds : l'émetteur de monnaie électronique ou le PSP.<br>Fonctionnement :</div>
+<ul>
+<li>les acheteurs paient sur le compte marchand du prestataire ;</li>
+<li>0xSeq suit la commande dans sa base ;</li>
+<li>après livraison, 0xSeq demande un payout vers le vendeur ;</li>
+<li>le prestataire paie et renvoie un webhook.</li>
+</ul>
+<div class="fields">Avantages  : rapide, peu de conformité directe, une seule intégration.<br>Inconvénients : le prestataire est seul dépositaire ; vérifier la séparation des fonds et la protection en cas de faillite.</div>
+<h4>MODÈLE B — Marketplace / sous-marchands</h4>
+<div class="fields">Qui détient les fonds : le PSP, avec un compte ou un identifiant par vendeur.<br>Fonctionnement :</div>
+<ul>
+<li>chaque vendeur est onboardé et vérifié (KYC) chez le PSP ;</li>
+<li>la collecte est rattachée au vendeur ;</li>
+<li>0xSeq déclenche le payout depuis la plateforme.</li>
+</ul>
+<div class="fields">Avantages  : plus propre pour une marketplace ; traçabilité par vendeur.<br>Inconvénients : onboarding plus lourd ; le PSP doit supported le "split" ou les "sub-merchants".</div>
+<h4>MODÈLE C — Compte séquestre bancaire + PSP technique</h4>
+<div class="fields">Qui détient les fonds : une banque, sur un compte de cantonnement/séquestre.<br>Fonctionnement :</div>
+<ul>
+<li>la banque ouvre un compte dédié aux fonds clients ;</li>
+<li>le PSP exécute les collectes et les décaissements ;</li>
+<li>0xSeq instruit les mouvements.</li>
+</ul>
+<div class="fields">Avantages  : protection et lisibilité maximales.<br>Inconvénients : coût, délais, montage contractuel lourd. Rarement adapté à un lancement solo.</div>
+<h4>RECOMMANDATION POUR UN FONDATEUR SOLO</h4>
+<p>Commencer par le MODÈLE A avec un agrégateur qui couvre Wave + Orange + MTN, et vérifier contractuellement la séparation des fonds. Passer au modèle B ensuite si le volume de vendeurs le justifie.</p><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-4"><h2><span class="secnum">4</span> QUI PEUT ÊTRE QUALIFIÉ DE "PRESTATAIRE AGRÉÉ"</h2><p>Trois familles à distinguer :</p>
+<h4>A. ÉMETTEURS DE MONNAIE ÉLECTRONIQUE (EME) / OPÉRATEURS</h4>
+<p>Exemples de marché : Wave, Orange Money, MTN MoMo, Moov Money. Ce sont eux qui peuvent détenir de la monnaie électronique. À vérifier : agrément BCEAO, pays couverts, offre marchand/marketplace.</p>
+<h4>B. ÉTABLISSEMENTS DE PAIEMENT / AGRÉGATEURS</h4>
+<p>Exemples : CinetPay, PayDunya, Hub2, Kkiapay, FedaPay. Ils agrègent plusieurs opérateurs. ATTENTION : un agrégateur n'est pas forcément le dépositaire des fonds. Demander explicitement : "qui détient l'argent et sous quel agrément ?"</p>
+<h4>C. BANQUES</h4>
+<p>Nécessaires pour un vrai compte de cantonnement / séquestre.</p>
+<h4>RÈGLE DE BASE</h4>
+<p>Ne jamais se contenter de la page marketing. Demander :</p>
+<ul>
+<li>le numéro d'agrément ;</li>
+<li>le périmètre autorisé ;</li>
+<li>la confirmation écrite du dépositaire ;</li>
+<li>la liste officielle BCEAO correspondante.</li>
+</ul><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-5"><h2><span class="secnum">5</span> VÉRIFICATIONS OBLIGATOIRES AVANT TOUTE DISCUSSION</h2><label class="check"><input type="checkbox" disabled><span>Le prestataire figure-t-il sur la liste officielle BCEAO des EME / établissements de paiement agréés ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Quel est son numéro d'agrément et sa date de validité ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Quels pays couvre-t-il réellement (CI, SN, ML, BF, etc.) ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Détient-il lui-même les fonds ou les route-t-il vers un opérateur ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Les fonds clients sont-ils séparés de ses fonds propres ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Que se passe-t-il en cas de faillite, suspension ou retrait d'agrément ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Propose-t-il une API de payout (décaissement) documentée ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Propose-t-il des comptes sous-marchands / du split payment ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Fournit-il des webhooks signés et une API de réconciliation ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Existe-t-il une sandbox accessible sans contrat définitif ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Quels sont les délais de règlement et les cut-off ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Quels sont les plafonds par transaction / par jour / par mois ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Quels documents KYC/KYB demande-t-il ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Quelle est la grille tarifaire (collecte, payout, abonnement) ?</span></label>
+<h4>PREUVE À CONSERVER</h4>
+<p>Garder une copie datée :</p>
+<ul>
+<li>de la page d'agrément BCEAO ;</li>
+<li>du contrat ;</li>
+<li>des conditions tarifaires ;</li>
+<li>des échanges sur le dépositaire des fonds.</li>
+</ul><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-6"><h2><span class="secnum">6</span> DOSSIER À PRÉPARER</h2><h4>SOCIÉTÉ</h4>
+<label class="check"><input type="checkbox" disabled><span>RCCM / registre du commerce</span></label>
+<label class="check"><input type="checkbox" disabled><span>DFE / numéro fiscal</span></label>
+<label class="check"><input type="checkbox" disabled><span>Statuts</span></label>
+<label class="check"><input type="checkbox" disabled><span>Liste des dirigeants et bénéficiaires effectifs</span></label>
+<label class="check"><input type="checkbox" disabled><span>Pièces d'identité des dirigeants</span></label>
+<label class="check"><input type="checkbox" disabled><span>Justificatif de domicile professionnel</span></label>
+<label class="check"><input type="checkbox" disabled><span>Compte bancaire de règlement (RIB)</span></label>
+<h4>ACTIVITÉ</h4>
+<label class="check"><input type="checkbox" disabled><span>Description claire du modèle : marketplace + séquestre + payout</span></label>
+<label class="check"><input type="checkbox" disabled><span>Parcours acheteur et parcours vendeur</span></label>
+<label class="check"><input type="checkbox" disabled><span>Volumes estimés (mensuel, panier moyen, nombre de vendeurs)</span></label>
+<label class="check"><input type="checkbox" disabled><span>Pays d'opération</span></label>
+<label class="check"><input type="checkbox" disabled><span>Types de produits vendus (risque/fraude)</span></label>
+<label class="check"><input type="checkbox" disabled><span>Conditions générales du service</span></label>
+<label class="check"><input type="checkbox" disabled><span>Politique de remboursement et de litige</span></label>
+<h4>CONFORMITÉ</h4>
+<label class="check"><input type="checkbox" disabled><span>Politique KYC vendeurs</span></label>
+<label class="check"><input type="checkbox" disabled><span>Politique AML / lutte anti-fraude</span></label>
+<label class="check"><input type="checkbox" disabled><span>Procédure de gel de compte</span></label>
+<label class="check"><input type="checkbox" disabled><span>Politique de protection des données</span></label>
+<label class="check"><input type="checkbox" disabled><span>Registre des traitements (si applicable)</span></label>
+<label class="check"><input type="checkbox" disabled><span>Processus de gestion des réclamations</span></label>
+<h4>TECHNIQUE</h4>
+<label class="check"><input type="checkbox" disabled><span>URL du site et de l'API</span></label>
+<label class="check"><input type="checkbox" disabled><span>Environnement de test</span></label>
+<label class="check"><input type="checkbox" disabled><span>Contact technique</span></label>
+<label class="check"><input type="checkbox" disabled><span>Description des webhooks attendus</span></label><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-7"><h2><span class="secnum">7</span> QUESTIONS À POSER AU PRESTATAIRE</h2><h4>AGRÉMENT ET DÉPÔT</h4>
+<div class="question"><span class="qnum">Q1</span><span>Quel est votre numéro d'agrément BCEAO et son périmètre exact ?</span></div>
+<div class="question"><span class="qnum">Q2</span><span>Qui est juridiquement dépositaire des fonds des acheteurs ?</span></div>
+<div class="question"><span class="qnum">Q3</span><span>Les fonds clients sont-ils cantonnés/séparés de vos fonds propres ?</span></div>
+<div class="question"><span class="qnum">Q4</span><span>Que se passe-t-il si vous êtes suspendu ou en faillite ?</span></div>
+<div class="question"><span class="qnum">Q5</span><span>Pouvez-vous fournir une attestation écrite de ces points ?</span></div>
+<h4>COLLECTE</h4>
+<div class="question"><span class="qnum">Q6</span><span>Quelles API de collecte proposez-vous (checkout, paiement direct) ?</span></div>
+<div class="question"><span class="qnum">Q7</span><span>Quels moyens : Wave, Orange Money, MTN MoMo, carte, banque ?</span></div>
+<div class="question"><span class="qnum">Q8</span><span>Quels webhooks pour confirmer un encaissement ?</span></div>
+<div class="question"><span class="qnum">Q9</span><span>Comment gérez-vous les doublons et les rejeux (idempotence) ?</span></div>
+<div class="question"><span class="qnum">Q10</span><span>Quels délais de confirmation et de règlement ?</span></div>
+<h4>DÉCAISSEMENT</h4>
+<div class="question"><span class="qnum">Q11</span><span>Disposez-vous d'une API de payout/décaissement documentée ?</span></div>
+<div class="question"><span class="qnum">Q12</span><span>Couvre-t-elle Wave, Orange Money et MTN depuis une seule API ?</span></div>
+<div class="question"><span class="qnum">Q13</span><span>Quels webhooks pour payout.completed / payout.failed ?</span></div>
+<div class="question"><span class="qnum">Q14</span><span>Quels statuts retournés (pending, processing, completed, failed) ?</span></div>
+<div class="question"><span class="qnum">Q15</span><span>Quels cut-off et délais de réception ?</span></div>
+<div class="question"><span class="qnum">Q16</span><span>Quels plafonds par payout et par jour ?</span></div>
+<div class="question"><span class="qnum">Q17</span><span>Comment sont gérés les échecs, reprises et remboursements ?</span></div>
+<div class="question"><span class="qnum">Q18</span><span>Peut-on payer un bénéficiaire qui n'est pas encore client chez vous ?</span></div>
+<h4>MARKETPLACE</h4>
+<div class="question"><span class="qnum">Q19</span><span>Proposez-vous des comptes sous-marchands ou du split payment ?</span></div>
+<div class="question"><span class="qnum">Q20</span><span>Qui réalise le KYC des vendeurs : vous ou nous ?</span></div>
+<div class="question"><span class="qnum">Q21</span><span>Peut-on rattacher chaque collecte à un vendeur identifié ?</span></div>
+<div class="question"><span class="qnum">Q22</span><span>Peut-on bloquer les fonds d'un vendeur en cas de litige ?</span></div>
+<div class="question"><span class="qnum">Q23</span><span>Peut-on reverser la commission plateforme automatiquement ?</span></div>
+<h4>TECHNIQUE</h4>
+<div class="question"><span class="qnum">Q24</span><span>Avez-vous une sandbox et des clés de test ?</span></div>
+<div class="question"><span class="qnum">Q25</span><span>Quelle est la documentation OpenAPI/Swagger ?</span></div>
+<div class="question"><span class="qnum">Q26</span><span>Quels langages/SDK sont supportés ?</span></div>
+<div class="question"><span class="qnum">Q27</span><span>Comment sont signés les webhooks et gérés les rejeux ?</span></div>
+<div class="question"><span class="qnum">Q28</span><span>Existe-t-il une API de solde et de réconciliation ?</span></div>
+<div class="question"><span class="qnum">Q29</span><span>Fournissez-vous un export quotidien des mouvements ?</span></div>
+<div class="question"><span class="qnum">Q30</span><span>Quels sont vos SLA de disponibilité et de support ?</span></div>
+<h4>COMMERCIAL</h4>
+<div class="question"><span class="qnum">Q31</span><span>Quelle est la grille tarifaire complète ?</span></div>
+<div class="question"><span class="qnum">Q32</span><span>Y a-t-il des frais d'installation ou un abonnement ?</span></div>
+<div class="question"><span class="qnum">Q33</span><span>Quels sont les délais d'onboarding ?</span></div>
+<div class="question"><span class="qnum">Q34</span><span>Quelles garanties ou pénalités en cas de retard de payout ?</span></div>
+<div class="question"><span class="qnum">Q35</span><span>Quelles sont les conditions de résiliation et de sortie des fonds ?</span></div><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-8"><h2><span class="secnum">8</span> CLAUSES CONTRACTUELLES À NÉGOCIER</h2><h4>DÉPÔT ET SÉCURITÉ</h4>
+<label class="check"><input type="checkbox" disabled><span>Identification du dépositaire légal des fonds.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Séparation / cantonnement des fonds clients.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Interdiction d'utiliser les fonds clients pour ses propres besoins.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Sort des fonds en cas d'insolvabilité ou de retrait d'agrément.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Droit d'audit et de contrôle.</span></label>
+<h4>EXÉCUTION</h4>
+<label class="check"><input type="checkbox" disabled><span>SLA de décaissement (délai maximum).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Cut-off et jours ouvrés.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Gestion des échecs et des reprises.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Plafonds et limites.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Responsabilité en cas de retard ou d'erreur de paiement.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Pénalités éventuelles.</span></label>
+<h4>ARGENT</h4>
+<label class="check"><input type="checkbox" disabled><span>Grille tarifaire (collecte, payout, abonnement, frais fixes).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Devise et conversion.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Remboursements, annulations, chargebacks.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Gestion des trop-perçus et des manques.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Modalités de règlement de la commission plateforme.</span></label>
+<h4>CONFORMITÉ</h4>
+<label class="check"><input type="checkbox" disabled><span>Répartition des obligations KYC / AML / CFT.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Vérification des vendeurs et des bénéficiaires.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Gel de compte et signalement.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Sanctions et listes de vigilance.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Protection des données personnelles.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Confidentialité.</span></label>
+<h4>TECHNIQUE</h4>
+<label class="check"><input type="checkbox" disabled><span>Webhooks signés et tolérance aux rejeux.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Idempotence des payout.</span></label>
+<label class="check"><input type="checkbox" disabled><span>API de réconciliation et exports.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Disponibilité et maintenance.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Réversibilité et export des données.</span></label>
+<h4>FIN</h4>
+<label class="check"><input type="checkbox" disabled><span>Durée, préavis, résiliation.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Sortie des fonds et continuité de service.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Droit applicable et juridiction.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Plafond de responsabilité.</span></label><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-9"><h2><span class="secnum">9</span> FLUX TECHNIQUE CIBLE</h2><pre class="diagram">   Acheteur
+      |
+      | 1. Checkout
+      v
+   Prestataire agréé  &lt;---------- 0xSeq (création de la commande)
+      |                              |
+      | 2. Fonds encaissés           | 3. Webhook "fonds reçus"
+      |    et conservés              |    -&gt; Paiement BLOCKED
+      |                              |
+      |                              | 4. Livraison confirmée
+      |                              |    -&gt; instruction de payout
+      | 5. Payout vers le vendeur    |
+      |    Wave / Orange / MTN       |
+      |                              |
+      | 6. Webhook payout.completed  |
+      |    ou payout.failed          |
+      v                              v
+   Vendeur                      0xSeq met à jour le statut
+                                et la réconciliation</pre>
+<h4>POINTS CLÉS</h4>
+<ul>
+<li>0xSeq ne stocke jamais l'argent.</li>
+<li>Le solde "wallet" interne devient un miroir des fonds chez le prestataire ou disparaît au profit d'un solde prestataire.</li>
+<li>Toute instruction de payout doit être idempotente.</li>
+<li>Chaque payout doit avoir une référence interne unique.</li>
+</ul><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-10"><h2><span class="secnum">10</span> MODIFICATIONS À PRÉVOIR DANS 0xSEQ</h2><h4>PHASE 1 — MODÈLE ET ABSTRACTION (sans dépendre d'un contrat)</h4>
+<label class="check"><input type="checkbox" disabled><span>Créer un modèle Payout :</span></label>
+<ul>
+<li>paiement lié</li>
+<li>vendeur</li>
+<li>montant</li>
+<li>devise</li>
+<li>opérateur (WAVE / ORANGE_MONEY / MTN_MOMO)</li>
+<li>téléphone bénéficiaire</li>
+<li>statut (PENDING / PROCESSING / COMPLETED / FAILED)</li>
+<li>référence interne unique</li>
+<li>référence fournisseur</li>
+<li>idempotency_key</li>
+<li>motif d'échec</li>
+<li>dates</li>
+</ul>
+<label class="check"><input type="checkbox" disabled><span>Créer une interface PayoutProvider :</span></label>
+<ul>
+<li>initiate_payout(payout)</li>
+<li>verify_payout(reference)</li>
+<li>handle_webhook(payload)</li>
+</ul>
+<label class="check"><input type="checkbox" disabled><span>Créer un ManualProvider (comportement actuel : confirmation admin).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ajouter un feature flag PAYOUT_PROVIDER=manual|cinetpay|wave|...</span></label>
+<label class="check"><input type="checkbox" disabled><span>Tests : idempotence, double payout interdit, échec, rejeu webhook.</span></label>
+<h4>PHASE 2 — ADAPTATEUR DU PRESTATAIRE CHOISI</h4>
+<label class="check"><input type="checkbox" disabled><span>Implémenter l'adaptateur réel.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Gérer l'authentification et les erreurs réseau.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Traiter les webhooks payout.* avec vérification de signature.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ajouter la réconciliation périodique (tâche Celery).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Journaliser chaque appel et chaque réponse.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ne jamais exposer les clés côté client.</span></label>
+<h4>PHASE 3 — COMPTES VENDEURS</h4>
+<label class="check"><input type="checkbox" disabled><span>Stocker l'identifiant vendeur chez le prestataire.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Onboarding/KYC vendeur avant premier payout.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Bloquer le payout si KYC incomplet.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Gérer les litiges : suspension du payout.</span></label>
+<h4>PHASE 4 — MISE EN PRODUCTION</h4>
+<label class="check"><input type="checkbox" disabled><span>Tests en sandbox avec petits montants.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Phase pilote avec quelques vendeurs.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Réconciliation quotidienne obligatoire.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Alertes sur payout FAILED ou PROCESSING trop long.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Procédure de secours manuelle documentée.</span></label><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-11"><h2><span class="secnum">11</span> PLAN D'ACTION SOLO (SEMAINE PAR SEMAINE)</h2><p>Vous êtes seul : l'objectif est de réduire le nombre d'intégrations et de négociations. Un seul agrégateur multi-opérateurs vaut mieux que trois intégrations Wave + Orange + MTN séparées.</p>
+<h4>SEMAINE 1 — CADRAGE</h4>
+<label class="check"><input type="checkbox" disabled><span>Relire ce document.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Consulter la liste officielle BCEAO des EME / établissements agréés.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Présélectionner 4 à 6 prestataires.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Envoyer l'e-mail type (section 13) à chacun.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ouvrir un tableau de suivi (section 14).</span></label>
+<h4>SEMAINE 2 — ENTRETIENS</h4>
+<label class="check"><input type="checkbox" disabled><span>Recevoir les réponses écrites.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Vérifier les agréments.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Poser les questions techniques (section 7).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Demander la documentation API et l'accès sandbox.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Éliminer ceux qui ne peuvent pas prouver le dépositaire des fonds.</span></label>
+<h4>SEMAINE 3 — SÉLECTION</h4>
+<label class="check"><input type="checkbox" disabled><span>Comparer sur : agrément, couverture, payout API, tarifs, délais.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Choisir un prestataire principal et un plan B.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Constituer le dossier KYB (section 6).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Demander le contrat et les conditions tarifaires.</span></label>
+<h4>SEMAINES 4 À 6 — CONTRAT ET SANDBOX</h4>
+<label class="check"><input type="checkbox" disabled><span>Faire relire le contrat par un juriste.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Négocier les clauses de la section 8.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Obtenir les clés sandbox.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Tester collecte + payout + webhooks.</span></label>
+<h4>SEMAINES 7 À 10 — INTÉGRATION</h4>
+<label class="check"><input type="checkbox" disabled><span>Implémenter Payout + PayoutProvider (phase 1).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Implémenter l'adaptateur (phase 2).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ajouter la réconciliation et les alertes.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Tests complets et revue de sécurité.</span></label>
+<h4>SEMAINE 11+ — PILOTE</h4>
+<label class="check"><input type="checkbox" disabled><span>Petits montants, peu de vendeurs.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Vérifier chaque payout manuellement.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Augmenter progressivement les plafonds.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Documenter les incidents.</span></label>
+<h4>SI LE PARTENARIAT PREND DU RETARD</h4>
+<label class="check"><input type="checkbox" disabled><span>Rester en mode manuel renforcé (section 12).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ne pas promettre un décaissement automatique aux vendeurs.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Continuer à améliorer la traçabilité et les preuves de virement.</span></label><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-12"><h2><span class="secnum">12</span> EN ATTENDANT : MODE MANUEL RENFORCÉ</h2><p>Le circuit actuel est déjà fonctionnel. Pour limiter les risques :</p>
+<label class="check"><input type="checkbox" disabled><span>KYC vendeur obligatoire avant tout retrait.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Plafond de retrait par jour et par vendeur.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Double validation : un admin prépare, un second confirme. (Si vous êtes seul, imposer au moins un délai de réflexion et une vérification téléphonique du bénéficiaire.)</span></label>
+<label class="check"><input type="checkbox" disabled><span>Référence de transfert obligatoire avant de marquer COMPLETED.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Preuve de virement archivée (capture, reçu opérateur).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Vérification du numéro bénéficiaire (nom + téléphone).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Journal d'audit : qui a validé, quand, quel montant.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Réconciliation quotidienne entre les soldes internes et les comptes Mobile Money.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Alerte si un vendeur demande un retrait juste après une libération.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ne jamais marquer COMPLETED sans transfert réel effectué.</span></label>
+<h4>RAPPEL</h4>
+<p>Le solde du portefeuille interne est une dette de la plateforme envers le vendeur. Il doit toujours être couvert par des fonds réellement encaissés.</p><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-13"><h2><span class="secnum">13</span> MODÈLE D'E-MAIL DE PRISE DE CONTACT</h2><p>Objet : Demande de partenariat — collecte et décaissement marketplace</p>
+<p>Bonjour,</p>
+<p>Nous éditons 0xSeq, une plateforme de paiement sécurisé pour l'e-commerce en FCFA (XOF). Les acheteurs paient, les fonds sont conservés jusqu'à validation de la livraison, puis reversés au vendeur.</p>
+<p>Nous recherchons un partenaire agréé pour :</p>
+<ul>
+<li>collecter les paiements des acheteurs (Wave, Orange Money, MTN MoMo) ;</li>
+<li>conserver les fonds jusqu'à validation de la livraison ;</li>
+<li>décaisser vers le vendeur sur son compte Mobile Money ;</li>
+<li>gérer des comptes sous-marchands ou un rattachement par vendeur ;</li>
+<li>fournir des webhooks et une API de réconciliation.</li>
+</ul>
+<p>Pouvez-vous nous confirmer :</p>
+<ol>
+<li>votre numéro d'agrément BCEAO et son périmètre ;</li>
+<li>qui est juridiquement dépositaire des fonds ;</li>
+<li>si les fonds clients sont séparés de vos fonds propres ;</li>
+<li>si vous proposez une API de payout documentée et une sandbox ;</li>
+<li>si vous supportez les comptes sous-marchands / le split payment ;</li>
+<li>vos tarifs, plafonds, délais de règlement et d'onboarding ;</li>
+<li>les documents KYC/KYB à fournir.</li>
+</ol>
+<p>Nous pouvons fournir notre dossier société et nos volumes prévisionnels dès que nécessaire.</p>
+<div class="fields">Cordialement,<br>[Votre nom]<br>[Fonction]<br>0xSeq<br>[E-mail] — [Téléphone]<br>[Site web]</div><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-14"><h2><span class="secnum">14</span> FICHE DE COMPARAISON DES PRESTATAIRES</h2><p>Copier/coller ce bloc pour chaque prestataire.</p>
+<div class="fields">NOM DU PRESTATAIRE :<br>CONTACT :<br>DATE DE CONTACT :<br>SITE :</div>
+<h4>AGRÉMENT</h4>
+<div class="fields">Numéro BCEAO :<br>Pays couverts :<br>Dépositaire des fonds :<br>Fonds séparés (oui/non/preuve) :<br>Sort en cas de faillite :</div>
+<h4>PRODUIT</h4>
+<div class="fields">Collecte (oui/non) :<br>Payout (oui/non) :<br>Opérateurs couverts :<br>Sous-marchands / split :<br>KYC vendeur (qui ?) :<br>Webhooks signés :<br>API réconciliation :<br>Sandbox :</div>
+<h4>TECHNIQUE</h4>
+<div class="fields">Documentation :<br>Délai d'intégration :<br>Idempotence :<br>Plafonds :<br>SLA :</div>
+<h4>COMMERCIAL</h4>
+<div class="fields">Frais de collecte :<br>Frais de payout :<br>Abonnement :<br>Délai d'onboarding :<br>Durée d'engagement :</div>
+<h4>AVIS</h4>
+<div class="fields">Points forts :<br>Points faibles :<br>Risques :<br>Décision :</div><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-15"><h2><span class="secnum">15</span> POINTS DE VIGILANCE JURIDIQUE</h2><ul>
+<li>Ne pas se présenter comme "séquestre agréé" ou "établissement de paiement" sans agrément.</li>
+<li>Utiliser une formulation honnête : "paiement sécurisé avec libération après livraison", "fonds conservés par un partenaire agréé".</li>
+<li>Vérifier qui, juridiquement, détient les fonds.</li>
+<li>Vérifier la séparation des fonds clients.</li>
+<li>Vérifier les obligations KYC/AML et qui les porte.</li>
+<li>Vérifier la protection des données personnelles.</li>
+<li>Faire relire le contrat par un avocat spécialisé UEMOA/BCEAO.</li>
+<li>Conserver toutes les preuves d'agrément et les échanges écrits.</li>
+<li>Ne pas promettre aux vendeurs un décaissement instantané avant que le prestataire ne le garantisse contractuellement.</li>
+</ul><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-16"><h2><span class="secnum">16</span> LEXIQUE</h2><pre class="aligned">BCEAO      Banque Centrale des États de l'Afrique de l'Ouest.
+EME        Émetteur de Monnaie Électronique (peut détenir de la monnaie électronique).
+PSP        Prestataire de services de paiement.
+EP         Établissement de paiement.
+KYC        Know Your Customer — vérification de l'identité.
+KYB        Know Your Business — vérification de l'entreprise.
+AML/CFT    Anti-Money Laundering / Combating the Financing of Terrorism.
+Payout     Décaissement vers un bénéficiaire (vendeur).
+Disbursement  Synonyme de payout.
+Split payment  Répartition automatique d'un paiement entre plusieurs acteurs.
+Cantonnement  Séparation des fonds clients des fonds propres.
+Cut-off    Heure limite de prise en charge d'un virement pour le jour ouvré.
+SLA        Engagement de niveau de service.
+Idempotence  Propriété qui empêche qu'une même instruction soit exécutée deux fois.
+XOF        Franc CFA UEMOA.</pre><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-17"><h2><span class="secnum">17</span> À VÉRIFIER / SOURCES</h2><p>À CONSULTER AU MOMENT DE L'EXÉCUTION (les listes évoluent) :</p>
+<label class="check"><input type="checkbox" disabled><span>Site officiel BCEAO — liste des EME et établissements de paiement agréés, et périmètre par pays.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Documentation Wave Business / Payout.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Documentation CinetPay (collecte, transfert, payout de masse).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Portail MTN MoMo Developer (produit Disbursement, sandbox).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Documentation Orange Developer / Orange Money.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Conditions générales et tarifs de chaque prestataire.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Cabinet juridique spécialisé UEMOA pour la revue du contrat.</span></label>
+<h4>NOTE</h4>
+<p>Les prestataires cités dans ce document sont des exemples de marché, pas des recommandations. Leur agrément, leur couverture et leurs tarifs doivent être vérifiés directement à la date du projet.</p><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section><section id="sec-18"><h2><span class="secnum">18</span> PSP, P2P ET NON-DÉTENTION DES FONDS</h2><h3 id="s18.1"><span class="num">18.1</span> QU'EST-CE QU'UN PSP ?</h3>
+<p>PSP = Prestataire de Services de Paiement.</p>
+<p>C'est une entreprise autorisée à fournir des services de paiement : encaisser, transférer, ouvrir des comptes de paiement, exécuter des décaissements. C'est un statut réglementaire défini par la BCEAO.</p>
+<pre class="aligned">PSP      = statut légal : autorisé à faire transiter des paiements.
+EME      = sous-catégorie de PSP : peut émettre et détenir de la monnaie électronique (Wave, Orange Money, MTN MoMo...).
+Agrégateur = rôle technique/commercial : connecte plusieurs opérateurs via une API (CinetPay, PayDunya...). Pas forcément PSP lui-même.
+Banque   = peut porter un compte de cantonnement/séquestre.</pre>
+<p>Attention : beaucoup de fintechs se disent "PSP" commercialement sans avoir l'agrément. Vérifier par un numéro d'agrément BCEAO et un périmètre précis.</p>
+<h3 id="s18.2"><span class="num">18.2</span> SUIS-JE OBLIGÉ D'AVOIR UN PSP ?</h3>
+<p>La question centrale n'est pas "suis-je P2P ?" mais :</p>
+<p>"Est-ce que l'argent des acheteurs passe un jour sur un compte que je contrôle ?"</p>
+<p>Cas A. L'argent va directement chez le vendeur (son compte Wave/OM/MTN). -&gt; 0xSeq ne détient rien : pas besoin d'être PSP.</p>
+<p>Cas B. L'argent va chez un PSP agréé, sur un compte sous-marchand du vendeur ; le PSP paie le vendeur sur instruction. -&gt; 0xSeq ne détient rien : pas besoin d'être PSP.</p>
+<p>Cas C. L'argent est encaissé sur le compte marchand de 0xSeq, conservé par 0xSeq, puis reversé plus tard. -&gt; 0xSeq détient des fonds pour compte de tiers : agrément EME/PSP ou partenaire agréé nécessaire.</p>
+<h4>SITUATION ACTUELLE DE 0xSEQ</h4>
+<p>Les paiements arrivent sur le compte marchand GeniusPay de 0xSeq, puis sont crédités dans un wallet interne. 0xSeq est donc dans le cas C, même si GeniusPay est un fournisseur technique agréé.</p>
+<p>Conséquence : le mot "séquestre" est juridiquement fragile tant que 0xSeq contrôle les fonds. Il faut soit un partenaire qui les détient, soit changer le flux.</p>
+<h3 id="s18.3"><span class="num">18.3</span> MON CODE ACTUEL EST-IL P2P ?</h3>
+<p>NON. Le code actuel est un marketplace avec séquestre et portefeuille interne, pas un P2P.</p>
+<pre class="diagram">  initiate_payment()  -&gt; l'argent arrive sur le compte marchand 0xSeq
+  Paiement            -&gt; commande encadrée par la plateforme
+  release_funds()     -&gt; crédite une dette interne (wallet vendeur)
+  WalletTransaction   -&gt; la plateforme doit l'argent au vendeur
+  retrait admin       -&gt; la plateforme exécute le décaissement</pre>
+<p>Un vrai P2P serait :</p>
+<pre class="diagram">  Acheteur -&gt; paiement direct -&gt; Vendeur</pre><p>0xSeq ne touche jamais l'argent (matching, lien, suivi, commission).</p>
+<p>"P2P" n'est pas un statut juridique protecteur. Ce qui compte, c'est qui contrôle l'argent. Un P2P qui conserve ou contrôle les fonds peut être requalifié en service de paiement.</p>
+<h3 id="s18.4"><span class="num">18.4</span> COMMENT NE PAS DÉTENIR LES FONDS (MODÈLE RECOMMANDÉ)</h3>
+<p>Objectif : 0xSeq ne reçoit jamais l'argent.</p>
+<p>Conditions à remplir :</p>
+<label class="check"><input type="checkbox" disabled><span>Aucun compte bancaire 0xSeq ne reçoit les paiements acheteurs.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Aucun compte marchand 0xSeq (GeniusPay ou autre) ne les reçoit.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Aucun wallet interne ne représente une dette de 0xSeq envers le vendeur.</span></label>
+<p>Modèle B — compte sous-marchand PSP :</p>
+<pre class="diagram">  Acheteur -&gt; PSP -&gt; compte sous-marchand du vendeur (chez le PSP)
+                          |
+                   0xSeq suit la commande
+                          |
+                   livraison confirmée
+                          |
+           0xSeq -&gt; PSP : libère / paie le vendeur
+                          |
+                   PSP -&gt; Wave / OM / MTN</pre>
+<p>Étapes :</p>
+<ol>
+<li>Choisir un PSP avec comptes sous-marchands, split payment ou delayed capture, API de payout et webhooks signés.</li>
+<li>Onboarder chaque vendeur chez le PSP (KYC fait par le PSP). Stocker son identifiant : provider_account_id.</li>
+<li>Créer le checkout sur le compte du vendeur, avec les métadonnées de commande. L'argent ne passe pas par 0xSeq.</li>
+<li>À la livraison, appeler l'API de capture/payout du PSP. La commission 0xSeq est prélevée par split ou facturée séparément.</li>
+<li>Réconcilier via webhooks payout.completed / payout.failed et un contrôle quotidien solde PSP vs commandes locales.</li>
+</ol>
+<h3 id="s18.5"><span class="num">18.5</span> MODÈLE A — PAIEMENT DIRECT AU VENDEUR (FALLBACK)</h3>
+<p>L'acheteur paie directement le vendeur (son propre compte marchand ou wallet). 0xSeq ne fait que générer le lien, suivre la commande et confirmer la livraison.</p>
+<div class="fields">Avantage  : simplicité, aucune détention.<br>Inconvénient : plus de séquestre réel ; le vendeur est payé avant livraison.<br>Mitigations possibles : vendeurs vérifiés, plafonds, paiement à la livraison, garantie vendeur, assurance, historique de confiance.</div>
+<h3 id="s18.6"><span class="num">18.6</span> CE QU'IL FAUT CHANGER DANS LE CODE</h3>
+<label class="check"><input type="checkbox" disabled><span>Ajouter provider_account_id sur le vendeur (compte PSP).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Créer un modèle Payout (statuts, référence, idempotency_key).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Créer une interface PayoutProvider + adaptateur PSP.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Remplacer le crédit wallet par un appel payout au PSP.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Garder un mode manual en secours (feature flag).</span></label>
+<label class="check"><input type="checkbox" disabled><span>Le wallet devient un miroir du solde PSP, ou disparaît.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Ajouter la réconciliation PSP et les alertes.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Mettre à jour les CGU.</span></label>
+<p>Tableau avant / après :</p>
+<p>Aujourd'hui                         Demain (sans détention) ----------------------------------  -------------------------------------- Compte marchand 0xSeq               Comptes sous-marchands vendeurs escrow_credits = dette interne      Solde miroir du PSP release_funds() crédite le wallet   release_funds() appelle le PSP Wallet = engagement de 0xSeq        Wallet = affichage solde PSP (ou rien) Retrait validé par admin            Payout exécuté par le PSP</p>
+<h3 id="s18.7"><span class="num">18.7</span> FORMULATIONS CGU</h3>
+<p>Honnête (si modèle B) : "Les paiements sont collectés et conservés par [PSP], établissement agréé. 0xSeq fournit le service de coordination de la commande et de la livraison et n'agit pas comme dépositaire des fonds."</p>
+<p>À éviter tant que ce n'est pas vrai : "Vos fonds sont séquestrés et garantis par 0xSeq." "0xSeq est un séquestre agréé."</p>
+<h3 id="s18.8"><span class="num">18.8</span> DÉCISION RECOMMANDÉE POUR UN FONDATEUR SOLO</h3>
+<ol>
+<li>Ne pas demander un agrément EME/PSP maintenant.</li>
+<li>Choisir un PSP/EME avec comptes sous-marchands et payout.</li>
+<li>Faire vérifier le montage par un avocat UEMOA avant communication.</li>
+<li>En attendant : mode manuel, plafonds, KYC vendeurs, preuves de virement.</li>
+<li>Ne pas encaisser de nouvelles ventes de tiers sur le compte marchand 0xSeq si le modèle cible est la non-détention.</li>
+</ol>
+<h3 id="s18.9"><span class="num">18.9</span> PREMIÈRE ACTION CETTE SEMAINE</h3>
+<label class="check"><input type="checkbox" disabled><span>Demander à GeniusPay : sous-marchands ? split payment ? delayed capture ? API payout ?</span></label>
+<label class="check"><input type="checkbox" disabled><span>Si non : évaluer CinetPay / Wave Payout / MTN MoMo Disbursement.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Décider : rester custodial avec partenaire, ou passer en sous-marchand.</span></label>
+<label class="check"><input type="checkbox" disabled><span>Mettre à jour le discours commercial en conséquence.</span></label>
+<h4>FIN DU DOCUMENT</h4>
+<p>Prochaine action concrète :</p>
+<ol>
+<li>Ouvrir la liste BCEAO des EME/PSP agréés.</li>
+<li>Choisir 4 à 6 prestataires.</li>
+<li>Envoyer l'e-mail de la section 13.</li>
+<li>Remplir une fiche de comparaison par prestataire.</li>
+<li>Décider du modèle : détenir les fonds (partenaire obligatoire) ou ne pas les détenir (sous-marchand PSP / paiement direct vendeur). Voir section 18.</li>
+</ol><p class="back"><a href="#sommaire">↑ Retour au sommaire</a></p></section>
+  </main>
+  <footer>
+    0xSeq — Guide partenariat payout. Ce document est un support de travail,
+    pas un avis juridique. Faire valider le montage et le contrat par un
+    conseil spécialisé UEMOA/BCEAO avant signature.
+  </footer>
+</div>
+</body>
+</html>

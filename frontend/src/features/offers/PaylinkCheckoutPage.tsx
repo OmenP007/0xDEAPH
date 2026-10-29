@@ -7,21 +7,24 @@ import {
   CheckCircle,
   AlertCircle,
   Sparkles,
+  QrCode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { formatFCFA, formatDate } from '@/lib/utils';
-import { MOCK_OFFERS } from '@/lib/mock-data';
 import { Offer } from '@/types/escrow';
 
 export const PaylinkCheckoutPage: React.FC = () => {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   const [offer, setOffer] = useState<Offer | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,23 +34,35 @@ export const PaylinkCheckoutPage: React.FC = () => {
         const res = await api.getOffer(code!);
         setOffer(res);
       } catch {
-        const found = MOCK_OFFERS.find((o) => o.code === code);
-        setOffer(found || MOCK_OFFERS[0]);
+        setError('Offre introuvable ou inactive.');
       } finally {
         setLoading(false);
       }
     };
-    fetchOffer();
+    if (code) fetchOffer();
   }, [code]);
 
   const handleCheckout = async () => {
+    if (!isAuthenticated) {
+      sessionStorage.setItem('checkout_redirect', code || '');
+      navigate(`/login?next=/pay/${code}`, {
+        state: { message: 'Vous devez vous connecter pour finaliser ce paiement sécurisé.' },
+      });
+      return;
+    }
     setError(null);
     setCheckingOut(true);
     try {
-      // In demo mode or if API is running
-      setTimeout(() => {
-        navigate('/escrow/101');
-      }, 800);
+      const res = await api.checkoutOffer(code!);
+      if (res.checkout_url && res.status === 'CREATED') {
+        window.location.href = res.checkout_url;
+        return;
+      }
+      if (res && res.id) {
+        navigate(`/escrow/${res.id}`);
+      } else {
+        navigate('/escrow');
+      }
     } catch (err: any) {
       setError(err.message || 'Impossible de finaliser le paiement.');
       setCheckingOut(false);
@@ -63,8 +78,13 @@ export const PaylinkCheckoutPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F14] text-slate-900 dark:text-[#F4F6FC] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-lg w-full mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F14] text-slate-900 dark:text-[#F4F6FC] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      {/* Ambient glow */}
+      <div
+        className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
+        style={{ background: 'rgba(123,61,255,0.08)' }}
+      />
+      <div className="max-w-lg w-full mx-auto space-y-6 opacity-0 animate-enter stagger-1" style={{ animationFillMode: 'forwards' }}>
         {/* Brand Header */}
         <div className="text-center">
           <div className="inline-flex items-center gap-2 mb-2">
@@ -75,14 +95,14 @@ export const PaylinkCheckoutPage: React.FC = () => {
         </div>
 
         {error && (
-          <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2">
+          <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2 animate-shake">
             <AlertCircle size={16} className="shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {/* Checkout Card */}
-        <Card className="p-6 sm:p-8 space-y-6 border-slate-200/80 dark:border-slate-800/80 shadow-2xl">
+        <Card className="p-6 sm:p-8 space-y-6 border-slate-200/80 dark:border-slate-800/80 shadow-2xl opacity-0 animate-modal-enter" style={{ animationFillMode: 'forwards', animationDelay: '100ms' }}>
           <div className="flex items-start justify-between">
             <div>
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
@@ -122,6 +142,35 @@ export const PaylinkCheckoutPage: React.FC = () => {
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               Votre argent est conservé sous séquestre. Le vendeur ne sera payé que lorsque vous lui transmettrez votre code secret OTP lors de la livraison.
             </p>
+          </div>
+
+          {/* QR Code Quick Mobile Payment */}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowQr(!showQr)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#7B3DFF] dark:text-[#00E5FF] hover:underline"
+            >
+              <QrCode size={14} />
+              <span>{showQr ? 'Masquer le QR Code' : 'Payer depuis mon mobile (Scanner le QR Code)'}</span>
+            </button>
+
+            {showQr && (
+              <div className="mt-3 p-4 rounded-2xl bg-slate-50 dark:bg-[#1A2030] border border-slate-200 dark:border-slate-800 text-center animate-enter">
+                <div className="p-3 bg-white rounded-xl inline-block mx-auto shadow-md">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(
+                      window.location.href
+                    )}`}
+                    alt="QR Code Paylink"
+                    className="w-36 h-36 object-contain"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Scannez avec votre téléphone pour ouvrir le paiement Wave / Orange Money.
+                </p>
+              </div>
+            )}
           </div>
 
           <Button

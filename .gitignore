@@ -14,6 +14,7 @@ env/
 !.env.production.example
 
 # Bytecode Python & caches
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -53,3 +54,4 @@ certbot_var/
 .idea/
 .DS_Store
 Thumbs.db
+.agents/

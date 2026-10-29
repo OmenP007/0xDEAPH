@@ -1,13 +1,22 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import APIKey, Dispute, KYCVerification, Paiement, User
+from .models import (
+    APIKey,
+    Dispute,
+    KYCVerification,
+    Paiement,
+    PlatformSettings,
+    User,
+    WalletTransaction,
+    WebhookEventLog,
+)
 
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    fieldsets = UserAdmin.fieldsets + (("Profil", {"fields": ("role",)}),)
-    add_fieldsets = UserAdmin.add_fieldsets + (("Profil", {"fields": ("role",)}),)
+    fieldsets = UserAdmin.fieldsets + (("Profil", {"fields": ("role", "full_name", "phone")}),)
+    add_fieldsets = UserAdmin.add_fieldsets + (("Profil", {"fields": ("role", "full_name", "phone")}),)
     list_display = ("username", "email", "role", "is_active", "date_joined")
     list_filter  = ("role", "is_active", "is_staff")
 
@@ -43,3 +52,30 @@ class APIKeyAdmin(admin.ModelAdmin):
     list_filter    = ("is_active",)
     search_fields  = ("user__username", "name", "prefix")
     readonly_fields = ("prefix", "key_hash", "last_used", "created_at")
+
+
+@admin.register(WalletTransaction)
+class WalletTransactionAdmin(admin.ModelAdmin):
+    list_display = ("reference", "user", "type", "amount", "method", "status", "created_at", "completed_at")
+    list_filter = ("type", "method", "status")
+    search_fields = ("reference", "user__username", "phone", "provider_reference")
+    readonly_fields = ("reference", "created_at", "completed_at")
+
+
+@admin.register(PlatformSettings)
+class PlatformSettingsAdmin(admin.ModelAdmin):
+    list_display = ("auto_release_delay_days", "commission_rate_percent", "min_escrow_amount", "maintenance_mode", "updated_at")
+
+    def has_add_permission(self, request):
+        return not PlatformSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WebhookEventLog)
+class WebhookEventLogAdmin(admin.ModelAdmin):
+    list_display = ("event_id", "event_type", "status", "created_at")
+    list_filter = ("status", "event_type")
+    search_fields = ("event_id", "event_type")
+    readonly_fields = ("event_id", "event_type", "payload", "status", "created_at")

@@ -81,18 +81,28 @@ def task_purge_old_idempotency_logs(self, days: int = 30):
 @shared_task(bind=True, max_retries=3, default_retry_delay=30, name="escrow.tasks.task_release_single_escrow")
 def task_release_single_escrow(self, paiement_id: int):
     """
-    Le payout unitaire n'est pas disponible dans l'API GeniusPay documentée.
+    Libère un séquestre unitaire vers le portefeuille interne du vendeur.
+
+    Utilisé pour les libérations demandées hors requête HTTP (retry, outil
+    d'administration). Aucun virement externe n'est effectué.
     """
     from .models import Paiement
+    from .services import EscrowReleaseError, release_funds
 
     try:
         paiement = Paiement.objects.get(pk=paiement_id)
-        if paiement.status != "BLOCKED":
-            logger.warning("[Celery] Impossible de libérer le paiement #%s (statut actuel: %s)", paiement_id, paiement.status)
-            return {"status": "SKIPPED", "paiement_id": paiement_id, "reason": f"Statut invalide ({paiement.status})"}
+        try:
+            result = release_funds(paiement)
+        except EscrowReleaseError as exc:
+            logger.warning("[Celery] Libération impossible pour le paiement #%s : %s", paiement_id, exc)
+            return {"status": "SKIPPED", "paiement_id": paiement_id, "reason": str(exc)}
 
-        logger.warning("[Celery] Payout indisponible pour paiement #%s : endpoint GeniusPay non documenté.", paiement_id)
-        return {"status": "NOT_SUPPORTED", "paiement_id": paiement_id}
+        return {
+            "status": "SUCCESS",
+            "paiement_id": paiement_id,
+            "credited": result["credited"],
+            "amount": result["amount"],
+        }
 
     except Paiement.DoesNotExist:
         logger.error("[Celery] Paiement #%s introuvable pour libération asynchrone.", paiement_id)

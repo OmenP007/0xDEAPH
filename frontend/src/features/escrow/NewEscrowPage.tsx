@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ShieldCheck,
   ArrowRight,
@@ -15,13 +15,15 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { formatFCFA, calculateFees } from '@/lib/utils';
+import { formatFCFA } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
+import { getPlatformSettings, loadPlatformSettings } from '@/lib/platform-settings';
+import { canCreateEscrow } from '@/lib/roles';
 
 export const NewEscrowPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, isDemoMode } = useAuth();
+  const { user } = useAuth();
 
   // Wizard state (steps 1 to 5)
   const [step, setStep] = useState(1);
@@ -32,13 +34,29 @@ export const NewEscrowPage: React.FC = () => {
   const [sellerUsername, setSellerUsername] = useState('');
   const [itemTitle, setItemTitle] = useState('');
   const [itemDescription, setItemDescription] = useState('');
+  const [itemImageUrl, setItemImageUrl] = useState('');
   const [amount, setAmount] = useState<number>(150000);
   const [deliveryTerms, setDeliveryTerms] = useState(
     'Remise en main propre contre code de validation OTP à 6 chiffres'
   );
-  const [autoReleaseDays, setAutoReleaseDays] = useState(3);
+  const [autoReleaseDays, setAutoReleaseDays] = useState(() => getPlatformSettings().autoReleaseDelayDays);
+  const [platformSettings, setPlatformSettings] = useState(() => getPlatformSettings());
 
-  const { fee, net } = calculateFees(amount || 0);
+  useEffect(() => {
+    loadPlatformSettings()
+      .then((settings) => {
+        setPlatformSettings(settings);
+        setAutoReleaseDays(settings.autoReleaseDelayDays);
+      })
+      .catch(() => {
+        // Keep cached/default configuration when the API is unreachable.
+      });
+  }, []);
+
+  const commissionRate = Number(platformSettings.commissionRatePercent);
+  const fee = Math.round((amount || 0) * (commissionRate / 100));
+  const net = (amount || 0) - fee;
+  const minAmount = Number(platformSettings.minEscrowAmount || 500);
 
   const handleNext = () => {
     setError(null);
@@ -46,8 +64,12 @@ export const NewEscrowPage: React.FC = () => {
       setError('Veuillez renseigner le nom d\'utilisateur du vendeur.');
       return;
     }
-    if (step === 2 && (!amount || amount <= 0)) {
-      setError('Le montant doit être supérieur à 0 FCFA.');
+    if (step === 1 && user && sellerUsername.trim().toLowerCase() === user.username.toLowerCase()) {
+      setError('Vous ne pouvez pas être à la fois acheteur et vendeur pour la même transaction.');
+      return;
+    }
+    if (step === 2 && (!amount || amount < minAmount)) {
+      setError(`Le montant minimum pour un séquestre est de ${formatFCFA(minAmount)}.`);
       return;
     }
     if (step === 3 && !itemTitle.trim()) {
@@ -67,23 +89,28 @@ export const NewEscrowPage: React.FC = () => {
     setLoading(true);
 
     try {
-      if (isDemoMode) {
-        // Simulated creation in demo mode
-        setTimeout(() => {
-          navigate('/escrow/101');
-        }, 800);
-        return;
-      }
+      const fullDescription = [
+        itemDescription,
+        deliveryTerms ? `[Modalités de livraison]: ${deliveryTerms}` : '',
+        itemImageUrl ? `[Visuel]: ${itemImageUrl}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
 
       const res = await api.createPayment({
         amount,
         seller_username: sellerUsername,
         item_title: itemTitle,
-        item_description: itemDescription,
+        item_description: fullDescription,
         delivery_terms: deliveryTerms,
       });
 
-      navigate(`/escrow/${res.id}`);
+      if (res.checkout_url && res.status === 'CREATED') {
+        // Redirige l'acheteur vers la page de paiement sécurisée GeniusPay / Mobile Money
+        window.location.href = res.checkout_url;
+      } else {
+        navigate(`/escrow/${res.id}`);
+      }
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la création du séquestre.');
     } finally {
@@ -91,8 +118,39 @@ export const NewEscrowPage: React.FC = () => {
     }
   };
 
+  if (!canCreateEscrow(user)) {
+    return (
+      <div className="max-w-3xl mx-auto py-8 animate-page-enter">
+        <Card className="p-8 text-center space-y-3">
+          <ShieldCheck size={32} className="mx-auto text-[#7B3DFF]" />
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+            Le séquestre direct est réservé aux comptes client
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Votre compte ({user?.role || 'membre'}) ne peut pas initier un paiement séquestré.
+            En tant que vendeur ou membre, créez plutôt un lien Paylink que vos acheteurs régleront.
+          </p>
+          <div className="flex items-center justify-center gap-2 pt-2">
+            <Link
+              to="/offers"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#7B3DFF] text-white text-xs font-bold hover:bg-[#682ad4]"
+            >
+              Gérer mes Paylinks
+            </Link>
+            <Link
+              to="/escrow"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300"
+            >
+              Voir mes séquestres
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-3xl mx-auto space-y-8 animate-fade-in py-4">
+    <div className="max-w-3xl mx-auto space-y-8 animate-page-enter py-4">
       {/* Page Header */}
       <div>
         <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-[#F4F6FC]">
@@ -140,7 +198,7 @@ export const NewEscrowPage: React.FC = () => {
       {/* Step Content */}
       <Card className="p-6 sm:p-8">
         {step === 1 && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-enter">
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-[#F4F6FC]">
                 Étape 1 : Qui est le vendeur ?
@@ -172,7 +230,7 @@ export const NewEscrowPage: React.FC = () => {
         )}
 
         {step === 2 && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-enter">
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-[#F4F6FC]">
                 Étape 2 : Montant de la transaction
@@ -188,7 +246,7 @@ export const NewEscrowPage: React.FC = () => {
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(Number(e.target.value))}
-                min="100"
+                min={minAmount}
                 step="1000"
                 required
               />
@@ -202,7 +260,7 @@ export const NewEscrowPage: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Frais de séquestre TRUST (1,00%) :</span>
+                  <span className="text-slate-400">Frais de séquestre TRUST ({commissionRate.toFixed(2).replace('.', ',')}%) :</span>
                   <span className="font-semibold text-[#7B3DFF]">
                     {formatFCFA(fee)}
                   </span>
@@ -219,7 +277,7 @@ export const NewEscrowPage: React.FC = () => {
         )}
 
         {step === 3 && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-enter">
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-[#F4F6FC]">
                 Étape 3 : Objet et Conditions de livraison
@@ -251,6 +309,44 @@ export const NewEscrowPage: React.FC = () => {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Input
+                  label="Photo ou Image de l'article (Optionnelle)"
+                  value={itemImageUrl}
+                  onChange={(e) => setItemImageUrl(e.target.value)}
+                  placeholder="https://images.unsplash.com/... ou lien de l'image"
+                />
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-slate-400">Exemples rapides :</span>
+                  {[
+                    { label: 'MacBook / PC', url: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600&auto=format&fit=crop&q=80' },
+                    { label: 'iPhone / Tel', url: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=600&auto=format&fit=crop&q=80' },
+                    { label: 'Montre / Luxe', url: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80' },
+                    { label: 'Prestation Dev', url: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=600&auto=format&fit=crop&q=80' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setItemImageUrl(preset.url)}
+                      className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-[#7B3DFF]/20 hover:text-[#7B3DFF] text-slate-600 dark:text-slate-300 transition-colors"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {itemImageUrl && (
+                  <div className="mt-2 relative w-full h-32 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900">
+                    <img src={itemImageUrl} alt="Aperçu article" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-1 right-2 text-[10px] bg-black/60 text-white px-2 py-0.5 rounded-full font-mono">
+                      Photo attachée au séquestre
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   Modalités de livraison et validation
@@ -267,7 +363,7 @@ export const NewEscrowPage: React.FC = () => {
         )}
 
         {step === 4 && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-enter">
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-[#F4F6FC]">
                 Étape 4 : Vérification du Récapitulatif
@@ -303,10 +399,26 @@ export const NewEscrowPage: React.FC = () => {
                 )}
               </div>
 
+              {itemImageUrl && (
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                    <img src={itemImageUrl} alt="Aperçu" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Visuel contractuel</span>
+                    <span className="text-xs text-slate-700 dark:text-slate-300">Photo enregistrée dans le séquestre</span>
+                  </div>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
-                <span className="text-slate-400 block text-[11px]">Conditions de validation</span>
+                <span className="text-slate-400 block text-[11px]">Conditions de validation &amp; Auto-Libération</span>
                 <p className="text-slate-600 dark:text-slate-300 font-medium">
                   {deliveryTerms}
+                </p>
+                <p className="text-[11px] text-[#7B3DFF] dark:text-[#a277ff] mt-1 font-semibold flex items-center gap-1">
+                  <Clock size={12} />
+                  Délai légal de protection : {autoReleaseDays} jour{autoReleaseDays > 1 ? 's' : ''} avant auto-libération.
                 </p>
               </div>
 

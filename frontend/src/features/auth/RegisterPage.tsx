@@ -7,13 +7,13 @@ import { useAuth } from '@/context/AuthContext';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
-  const { register, isDemoMode } = useAuth();
+  const { register } = useAuth();
 
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
-  const [role, setRole] = useState<'client' | 'developer'>('client');
+  const [role, setRole] = useState<'client' | 'seller' | 'developer'>('client');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,14 +35,7 @@ export const RegisterPage: React.FC = () => {
     setLoading(true);
 
     try {
-      if (isDemoMode) {
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 500);
-        return;
-      }
-
-      await register({ username, email, password, password2 });
+      await register({ username, email, password, password2, role });
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'inscription. Veuillez vérifier les informations.');
@@ -52,8 +45,14 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F14] flex flex-col justify-center py-12 sm:px-6 lg:px-8 transition-colors">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F14] flex flex-col justify-center py-12 sm:px-6 lg:px-8 transition-colors relative overflow-hidden">
+      {/* Ambient glow */}
+      <div
+        className="absolute top-1/3 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
+        style={{ background: 'rgba(123,61,255,0.08)' }}
+      />
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center opacity-0 animate-enter stagger-1" style={{ animationFillMode: 'forwards' }}>
         <Link to="/" className="inline-flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-[#7B3DFF]/10 flex items-center justify-center p-2">
             <img src="/logo.png" alt="TRUST Logo" className="w-full h-full object-contain" />
@@ -70,10 +69,10 @@ export const RegisterPage: React.FC = () => {
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
-        <div className="bg-white dark:bg-[#131820] py-8 px-6 sm:px-10 shadow-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0 opacity-0 animate-modal-enter" style={{ animationFillMode: 'forwards', animationDelay: '120ms' }}>
+        <div className={`bg-white dark:bg-[#131820] py-8 px-6 sm:px-10 shadow-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80 transition-all duration-300 ${error ? 'animate-shake' : ''}`}>
           {error && (
-            <div className="mb-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2">
+            <div className="mb-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2 animate-enter" style={{ animationFillMode: 'forwards' }}>
               <AlertCircle size={16} className="shrink-0" />
               <span>{error}</span>
             </div>
@@ -107,22 +106,33 @@ export const RegisterPage: React.FC = () => {
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Type de profil
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setRole('client')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                  className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition-all ${
                     role === 'client'
                       ? 'border-[#7B3DFF] bg-[#7B3DFF]/10 text-[#7B3DFF]'
                       : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
-                  Particulier / Marchand
+                  Acheteur / Client
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('seller')}
+                  className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition-all ${
+                    role === 'seller'
+                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  Vendeur
                 </button>
                 <button
                   type="button"
                   onClick={() => setRole('developer')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                  className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition-all ${
                     role === 'developer'
                       ? 'border-[#00E5FF] bg-[#00E5FF]/10 text-[#00E5FF]'
                       : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
@@ -131,6 +141,11 @@ export const RegisterPage: React.FC = () => {
                   Développeur (API)
                 </button>
               </div>
+              <p className="text-[10px] text-slate-400">
+                {role === 'client' && 'Vous pourrez initier des séquestres protégés en tant qu\'acheteur.'}
+                {role === 'seller' && 'Vous pourrez créer des liens Paylink et recevoir des paiements séquestrés.'}
+                {role === 'developer' && 'Vous pourrez générer des clés API pour intégrer TRUST.'}
+              </p>
             </div>
 
             <div>

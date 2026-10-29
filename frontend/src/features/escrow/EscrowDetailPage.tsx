@@ -22,13 +22,12 @@ import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { formatFCFA, formatDate, getRemainingTime } from '@/lib/utils';
-import { MOCK_TRANSACTIONS } from '@/lib/mock-data';
 import { EscrowTransaction } from '@/types/escrow';
 
 export const EscrowDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, isDemoMode } = useAuth();
+  const { user } = useAuth();
 
   const [escrow, setEscrow] = useState<EscrowTransaction | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,28 +47,29 @@ export const EscrowDetailPage: React.FC = () => {
     const fetchEscrow = async () => {
       setLoading(true);
       try {
-        if (isDemoMode) {
-          const found = MOCK_TRANSACTIONS.find((t) => String(t.id) === String(id));
-          setEscrow(found || MOCK_TRANSACTIONS[0]);
-        } else {
-          const res = await api.getPayment(id!);
-          setEscrow(res);
-        }
-      } catch {
-        const found = MOCK_TRANSACTIONS.find((t) => String(t.id) === String(id));
-        setEscrow(found || MOCK_TRANSACTIONS[0]);
+        const res = await api.getPayment(id!);
+        setEscrow(res);
+      } catch (err: any) {
+        setActionError(err.message || 'Impossible de charger la transaction.');
       } finally {
         setLoading(false);
       }
     };
-    fetchEscrow();
-  }, [id, isDemoMode]);
+    if (id) fetchEscrow();
+  }, [id]);
 
   if (loading || !escrow) {
     return (
-      <div className="py-20 text-center space-y-3">
-        <div className="w-8 h-8 border-2 border-[#7B3DFF] border-t-transparent rounded-full animate-spin mx-auto" />
-        <p className="text-xs text-slate-400">Chargement des données du séquestre...</p>
+      <div className="max-w-4xl mx-auto space-y-6 py-4 animate-enter">
+        <div className="flex items-center justify-between">
+          <div className="h-8 w-48 rounded-xl skeleton" />
+          <div className="h-8 w-28 rounded-xl skeleton" />
+        </div>
+        <div className="h-44 rounded-3xl skeleton" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-36 rounded-3xl skeleton" />
+          <div className="h-36 rounded-3xl skeleton" />
+        </div>
       </div>
     );
   }
@@ -81,15 +81,6 @@ export const EscrowDetailPage: React.FC = () => {
     setActionError(null);
     setSubmittingOtp(true);
     try {
-      if (isDemoMode) {
-        setTimeout(() => {
-          setEscrow({ ...escrow, status: 'RELEASED' });
-          setOtpSuccess(true);
-          setSubmittingOtp(false);
-        }, 600);
-        return;
-      }
-
       await api.confirmDelivery(escrow.id, otpInput);
       setEscrow({ ...escrow, status: 'RELEASED' });
       setOtpSuccess(true);
@@ -103,15 +94,6 @@ export const EscrowDetailPage: React.FC = () => {
   const handleOpenDispute = async () => {
     setDisputeLoading(true);
     try {
-      if (isDemoMode) {
-        setTimeout(() => {
-          setEscrow({ ...escrow, status: 'DISPUTED', dispute_reason: disputeReason });
-          setShowDisputeModal(false);
-          setDisputeLoading(false);
-        }, 600);
-        return;
-      }
-
       await api.openDispute(escrow.id, disputeReason, disputeDetails);
       setEscrow({ ...escrow, status: 'DISPUTED', dispute_reason: disputeReason });
       setShowDisputeModal(false);
@@ -137,7 +119,7 @@ export const EscrowDetailPage: React.FC = () => {
   ];
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in py-2">
+    <div className="max-w-4xl mx-auto space-y-6 animate-page-enter py-2">
       {/* Top back button & Reference */}
       <div className="flex items-center justify-between">
         <button
@@ -212,6 +194,19 @@ export const EscrowDetailPage: React.FC = () => {
         </div>
       </Card>
 
+      {/* OTP Delivery Success Alert */}
+      {otpSuccess && (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm flex items-center gap-3 animate-success">
+          <div className="w-9 h-9 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+            <CheckCircle size={20} className="text-emerald-400" />
+          </div>
+          <div>
+            <p className="font-bold">Code OTP validé avec succès !</p>
+            <p className="text-xs text-slate-400">Les fonds ont été libérés instantanément et transférés sur le solde du vendeur.</p>
+          </div>
+        </div>
+      )}
+
       {/* Action Error Alert */}
       {actionError && (
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2">
@@ -241,14 +236,22 @@ export const EscrowDetailPage: React.FC = () => {
                   </p>
 
                   <div className="inline-flex items-center gap-3 p-3 rounded-2xl bg-[#0B0F14] border border-slate-800 text-white font-mono text-xl tracking-[0.25em] font-black">
-                    <span className="text-[#00E5FF]">{escrow.delivery_otp || '784912'}</span>
-                    <button
-                      onClick={() => copyToClipboard(escrow.delivery_otp || '784912')}
-                      className="p-1 rounded text-slate-400 hover:text-white transition-colors"
-                      title="Copier le code OTP"
-                    >
-                      {copiedOtp ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
-                    </button>
+                    {escrow.delivery_otp ? (
+                      <>
+                        <span className="text-[#00E5FF]">{escrow.delivery_otp}</span>
+                        <button
+                          onClick={() => copyToClipboard(escrow.delivery_otp || '')}
+                          className="p-1 rounded text-slate-400 hover:text-white transition-colors"
+                          title="Copier le code OTP"
+                        >
+                          {copiedOtp ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-amber-400 text-xs font-normal tracking-normal">
+                        Code OTP non disponible. Contactez le support.
+                      </span>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -263,7 +266,7 @@ export const EscrowDetailPage: React.FC = () => {
                       type="text"
                       maxLength={6}
                       value={otpInput}
-                      onChange={(e) => setOtpInput(e.target.value)}
+                      onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
                       placeholder="000000"
                       className="w-36 text-center tracking-[0.25em] font-mono text-lg h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1A2030] focus:ring-2 focus:ring-[#7B3DFF] focus:outline-none"
                     />
@@ -368,7 +371,7 @@ export const EscrowDetailPage: React.FC = () => {
       {/* Dispute Modal */}
       {showDisputeModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#131820] max-w-md w-full rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl animate-fade-in">
+          <div className="bg-white dark:bg-[#131820] max-w-md w-full rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl animate-modal-enter">
             <h3 className="text-lg font-bold text-slate-900 dark:text-[#F4F6FC]">
               Déclarer un Litige sur cette transaction
             </h3>

@@ -12,44 +12,55 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
-import { MOCK_API_KEYS } from '@/lib/mock-data';
 import { APIKeyItem } from '@/types/escrow';
+import { useAuth } from '@/context/AuthContext';
+import { canManageApiKeys } from '@/lib/roles';
 
 export const ApiKeysPage: React.FC = () => {
-  const { isDemoMode } = useAuth();
-
+  const { user } = useAuth();
+  const allowed = canManageApiKeys(user);
   const [keys, setKeys] = useState<APIKeyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState('');
-  const [scopes, setScopes] = useState<string[]>(['read', 'payments']);
+  const [scopes, setScopes] = useState<string[]>(['payments:read']);
   const [creating, setCreating] = useState(false);
 
   // Secret revelation modal
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [copiedSecret, setCopiedSecret] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [confirmRevokeId, setConfirmRevokeId] = useState<string | number | null>(null);
+
+  // Auto-hide revealed secret after 60 seconds
+  useEffect(() => {
+    if (!revealedSecret) return;
+    const timer = setTimeout(() => setRevealedSecret(null), 60000);
+    return () => clearTimeout(timer);
+  }, [revealedSecret]);
 
   useEffect(() => {
+    if (!allowed) {
+      setKeys([]);
+      setLoading(false);
+      return;
+    }
     const fetchKeys = async () => {
       setLoading(true);
       try {
-        if (isDemoMode) {
-          setKeys(MOCK_API_KEYS);
-        } else {
-          const res = await api.getAPIKeys();
-          setKeys(res.length > 0 ? res : MOCK_API_KEYS);
-        }
+        const res = await api.getAPIKeys();
+        setKeys(Array.isArray(res) ? res : []);
       } catch {
-        setKeys(MOCK_API_KEYS);
+        setKeys([]);
       } finally {
         setLoading(false);
       }
     };
     fetchKeys();
-  }, [isDemoMode]);
+  }, [allowed]);
 
   const handleToggleScope = (scope: string) => {
     if (scopes.includes(scope)) {
@@ -64,48 +75,33 @@ export const ApiKeysPage: React.FC = () => {
     setCreating(true);
 
     try {
-      if (isDemoMode) {
-        const mockSecret = `tr_live_sk_${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
-        const newKey: APIKeyItem = {
-          id: Date.now(),
-          name,
-          prefix: mockSecret.substring(0, 16),
-          scopes,
-          is_active: true,
-          created_at: new Date().toISOString(),
-          secret: mockSecret,
-        };
-        setKeys([newKey, ...keys]);
-        setRevealedSecret(mockSecret);
-        setShowModal(false);
-        setCreating(false);
-        return;
-      }
-
       const res = await api.createAPIKey({ name, scopes });
       setKeys([res, ...keys]);
       if (res.secret) {
         setRevealedSecret(res.secret);
       }
       setShowModal(false);
+      setName('');
     } catch (err: any) {
-      alert(err.message || 'Erreur lors de la création de la clé.');
+      setCreateError(err.message || 'Erreur lors de la création de la clé.');
     } finally {
       setCreating(false);
     }
   };
 
   const handleRevoke = async (id: string | number) => {
-    if (!confirm('Êtes-vous sûr de vouloir révoquer cette clé d\'API immédiatement ?')) return;
+    setConfirmRevokeId(id);
+  };
+
+  const confirmRevoke = async () => {
+    if (confirmRevokeId === null) return;
+    const id = confirmRevokeId;
+    setConfirmRevokeId(null);
     try {
-      if (isDemoMode) {
-        setKeys(keys.filter((k) => k.id !== id));
-        return;
-      }
       await api.revokeAPIKey(id);
       setKeys(keys.filter((k) => k.id !== id));
     } catch (err: any) {
-      alert(err.message || 'Impossible de révoquer la clé.');
+      setRevokeError(err.message || 'Impossible de révoquer la clé.');
     }
   };
 
@@ -116,8 +112,33 @@ export const ApiKeysPage: React.FC = () => {
     setTimeout(() => setCopiedSecret(false), 2000);
   };
 
+  if (!allowed) {
+    return (
+      <div className="space-y-6 animate-page-enter max-w-3xl">
+        <div>
+          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-[#F4F6FC]">
+            Clés d'API & Développeurs
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Intégrez TRUST dans vos applications tierces via l'API sécurisée.
+          </p>
+        </div>
+        <Card className="p-8 text-center space-y-3">
+          <ShieldAlert size={32} className="mx-auto text-amber-500" />
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">
+            Accès réservé aux comptes développeur
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Les clés API sont réservées aux comptes de rôle « développeur » et aux administrateurs.
+            Votre compte actuel ({user?.role || 'membre'}) ne peut pas générer de clé.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 animate-fade-in max-w-5xl">
+    <div className="space-y-6 animate-page-enter max-w-5xl">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-[#F4F6FC]">
@@ -139,9 +160,30 @@ export const ApiKeysPage: React.FC = () => {
         </Button>
       </div>
 
+      {/* Inline error banners */}
+      {createError && (
+        <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={16} className="shrink-0" />
+            <span>{createError}</span>
+          </div>
+          <button onClick={() => setCreateError(null)} className="text-slate-400 hover:text-white ml-4">✕</button>
+        </div>
+      )}
+
+      {revokeError && (
+        <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={16} className="shrink-0" />
+            <span>{revokeError}</span>
+          </div>
+          <button onClick={() => setRevokeError(null)} className="text-slate-400 hover:text-white ml-4">✕</button>
+        </div>
+      )}
+
       {/* Secret Revelation Alert Modal */}
       {revealedSecret && (
-        <div className="p-6 rounded-3xl bg-amber-500/10 border border-amber-500/30 space-y-4 animate-fade-in">
+        <div className="p-6 rounded-3xl bg-amber-500/10 border border-amber-500/30 space-y-4 animate-modal-enter">
           <div className="flex items-center gap-3 text-amber-500 font-bold text-sm">
             <AlertTriangle size={18} />
             <span>Conservez précieusement votre clé secrète !</span>
@@ -181,8 +223,15 @@ export const ApiKeysPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                {keys.map((k) => (
-                  <tr key={k.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                {keys.map((k, idx) => (
+                  <tr
+                    key={k.id}
+                    className="hover:bg-slate-50 dark:hover:bg-slate-800/30 opacity-0 animate-enter"
+                    style={{
+                      animationFillMode: 'forwards',
+                      animationDelay: `${idx * 60}ms`,
+                    }}
+                  >
                     <td className="py-3.5 px-3 font-semibold text-slate-900 dark:text-[#F4F6FC]">
                       {k.name}
                     </td>
@@ -232,7 +281,7 @@ export const ApiKeysPage: React.FC = () => {
       {/* Creation Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#131820] max-w-md w-full rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl animate-fade-in">
+          <div className="bg-white dark:bg-[#131820] max-w-md w-full rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl animate-modal-enter">
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">
               Générer une Nouvelle Clé d'API
             </h3>
@@ -252,10 +301,9 @@ export const ApiKeysPage: React.FC = () => {
                 </label>
                 <div className="space-y-2 text-xs">
                   {[
-                    { id: 'read', label: 'read — Lecture des transactions & séquestres' },
-                    { id: 'write', label: 'write — Modification et création d\'offres' },
-                    { id: 'payments', label: 'payments — Déclenchement de paiements séquestrés' },
-                    { id: 'webhooks', label: 'webhooks — Gestion des flux webhook' },
+                    { id: 'payments:read', label: 'payments:read — Lire les paiements & séquestres' },
+                    { id: 'payments:create', label: 'payments:create — Créer des paiements séquestrés' },
+                    { id: 'payments:refund', label: 'payments:refund — Rembourser des paiements' },
                   ].map((sc) => (
                     <label key={sc.id} className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -279,6 +327,29 @@ export const ApiKeysPage: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Revoke */}
+      {confirmRevokeId !== null && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#131820] max-w-sm w-full rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl animate-modal-enter">
+            <div className="flex items-center gap-3 text-rose-500">
+              <ShieldAlert size={20} />
+              <h3 className="text-base font-bold text-slate-900 dark:text-[#F4F6FC]">Révoquer la clé d'API ?</h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Cette action est <strong>irréversible</strong>. La clé sera immédiatement désactivée et toute intégration utilisant cette clé cessera de fonctionner.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setConfirmRevokeId(null)} className="text-xs">
+                Annuler
+              </Button>
+              <Button variant="danger" size="sm" onClick={confirmRevoke} className="text-xs">
+                Confirmer la Révocation
+              </Button>
+            </div>
           </div>
         </div>
       )}

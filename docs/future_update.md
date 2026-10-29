@@ -6,10 +6,10 @@ Ce document récapitule les fonctionnalités déployées sur 0xSeq et le journal
 
 ## 🏆 Statut Global du Projet
 
-* **Suite de tests automatisés :** 55/55 validés (100% succès)
+* **Suite de tests automatisés :** 103/103 validés (100% succès)
 * **Devise :** FCFA (XOF)
 * **Taux de commission :** 1.00%
-* **Limite GeniusPay :** l'API documentée fournit le checkout et le refund, mais pas le payout vendeur. `BLOCKED` reste un état interne et l'auto-release est désactivé.
+* **Limite GeniusPay :** l'API documentée fournit le checkout et le refund, mais pas le payout vendeur. La libération crédite donc le portefeuille interne du vendeur ; le cashout Mobile Money reste confirmé par un administrateur.
 * **Sécurité & Pentest :** Verrouillage pessimiste atomique, Anti-replay webhooks, Rate limiting, Headers stricts (CSP, HSTS).
 * **Déploiement :** Docker Compose (Django Gunicorn, Redis 7, Celery Worker, Celery Beat, Nginx SSL, SQLite3 persistant).
 
@@ -31,7 +31,7 @@ Ce document récapitule les fonctionnalités déployées sur 0xSeq et le journal
 | **2.5** | Endpoint Checkout : `POST /api/offers/{code}/checkout/` (Initiation séquestre automatique) | `[FAIT]` |
 | **2.6** | Endpoint OTP Livraison : `POST /api/payments/{id}/confirm-delivery/` (Socle validé ; gestion avancée du cycle OTP reportée à plus tard) | `[FAIT (Socle)]` |
 | **3.1** | Rédaction et validation de la suite de tests unitaires pour le flux Offre/Paylink/OTP | `[FAIT]` |
-| **3.2** | Validation globale de non-régression (Suite complète de tests passants : 55/55) | `[FAIT]` |
+| **3.2** | Validation globale de non-régression (Suite complète de tests passants : 103/103) | `[FAIT]` |
 
 ---
 
@@ -44,9 +44,10 @@ Le socle technique minimal est d'ores et déjà en place (génération du champ 
 - **Espace Livreur Tiers :** Interface web mobile éphémère (sans création de compte obligatoire) permettant à un coursier ou transporteur indépendant de saisir le code client lors de la remise en main propre.
 - **Signature & Alternative de Secours :** Procédure de déblocage manuel en cas de problème de réseau ou d'indisponibilité du SMS (validation directe depuis l'espace client ou réclamation conjointe).
 
-### 2. Payout Vendeur & Décaissement Réel `[EN ATTENTE DU FOURNISSEUR]`
-- Intégration d'une API officielle de payout (GeniusPay ou prestataire agréé) pour automatiser le versement effectif sur les comptes Mobile Money / bancaires des vendeurs.
-- Réactivation de la transition vers `RELEASED` et du déclencheur périodique Celery Beat.
+### 2. Décaissement Externe Automatisé `[EN ATTENTE DU FOURNISSEUR]`
+- La libération d'un séquestre crédite désormais le portefeuille interne du vendeur (`BLOCKED` → `RELEASED`), et l'auto-release Celery est actif.
+- Le vendeur peut demander un retrait Wave / Orange Money / MTN MoMo ; le mouvement reste `PENDING` jusqu'à confirmation administrateur.
+- Reste à automatiser le virement externe avec une API officielle de payout (GeniusPay ou prestataire agréé).
 
 ---
 
@@ -58,10 +59,10 @@ Le socle technique minimal est d'ores et déjà en place (génération du champ 
 - **Prélèvement automatique :** `fee_amount` (1% du montant brut) et `net_amount` (montant reversé au vendeur) calculés au franc près.
 - **Validation comptable :** Traçabilité complète enregistrée sur le modèle `Paiement`.
 
-### 2. Délais de Séquestre & Libération Automatique `[EN ATTENTE DU PAYOUT PROVIDER]`
-- Le champ `auto_release_at` calcule une échéance interne, mais aucun payout GeniusPay n'est documenté pour transférer les fonds au vendeur.
-- Le scheduler Celery ne déclenche donc plus de libération automatique.
-- Une libération effective nécessite l'endpoint payout et le contrat de conservation des fonds du fournisseur.
+### 2. Délais de Séquestre & Libération Automatique `[FAIT]`
+- Le champ `auto_release_at` calcule l'échéance interne ; à expiration, la tâche Celery libère le séquestre vers le portefeuille du vendeur.
+- Les litiges `DISPUTED` sont exclus et restent arbitrés manuellement.
+- Le virement externe (Wave / Orange / MTN) reste une demande de retrait confirmée par un administrateur.
 
 ### 3. Module KYC (Know Your Customer) `[FAIT]`
 - **Modèle `KYCVerification` :** CNI, Passeport, Permis de conduire.

@@ -5,11 +5,15 @@
 [![Celery](https://img.shields.io/badge/Celery-5.6-37814A?style=for-the-badge&logo=celery&logoColor=white)](https://docs.celeryq.dev/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Tests-55%2F55%20Passing-success?style=for-the-badge)](https://github.com/)
+[![Tests](https://img.shields.io/badge/Tests-103%2F103%20Passing-success?style=for-the-badge)](https://github.com/)
 
 **0xSeq** est un backend de paiement et de suivi de livraison pour l'e-commerce en **FCFA (XOF)**.
 
-> **Limite actuelle de l'intégration financière :** la documentation GeniusPay fournie couvre la création de paiements checkout et les remboursements, mais pas la mise sous séquestre ni le payout vers un vendeur. `BLOCKED` est donc un état interne; les fonds ne sont pas garantis comme détenus par 0xSeq. Les actions de libération et l'auto-release restent bloquées. Ne pas utiliser comme séquestre de production avant d'avoir un endpoint payout officiel et un accord de conservation des fonds.
+> **Libération des fonds :** la documentation GeniusPay fournie couvre le checkout et le remboursement, mais pas le virement direct vers un vendeur. La libération crédite donc le **portefeuille interne du vendeur** (`net_amount`) ; le vendeur peut ensuite demander un retrait Wave, Orange Money ou MTN MoMo, traité par un administrateur. Aucun virement externe automatique n'est simulé.
+
+> 🏦 **Détention des fonds :** le circuit actuel est *custodial* (compte marchand 0xSeq ➔ portefeuille interne ➔ retrait validé par un administrateur). Le passage à un **PSP/EME agréé** (compte sous-marchand, décaissement automatique, non-détention des fonds) est en cours — voir la section **Partenariat PSP & documents légaux** ci-dessous.
+
+> 📐 **Documentation complète des fonctionnalités et de l'architecture :** [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ---
 
@@ -18,7 +22,8 @@
 ### 1. Cycle de Séquestre & Automatisation
 - **Machine à états transactionnelle stricte :** `CREATED` ➔ `BLOCKED` ➔ `RELEASED` / `REFUNDED` / `DISPUTED`.
 - **État de paiement :** `CREATED` puis `BLOCKED` après confirmation du webhook GeniusPay; cet état est local et ne signifie pas que GeniusPay détient les fonds en escrow.
-- **Payout :** indisponible avec les endpoints actuellement documentés; les demandes de libération et l'auto-release ne changent pas le statut en `RELEASED`.
+- **Libération :** `BLOCKED` → `RELEASED` crédite le portefeuille interne du vendeur avec le `net_amount`; l'auto-release libère les séquestres expirés vers ce même portefeuille.
+- **Retrait :** le vendeur demande un cashout Wave / Orange Money / MTN MoMo depuis son portefeuille; le mouvement reste `PENDING` jusqu'à confirmation administrateur.
 - **Remboursement :** endpoint GeniusPay documenté sur la référence de transaction, disponible pour les paiements admissibles.
 
 ### 2. Architecture Bidirectionnelle & Liens de Paiement (Paylinks)
@@ -130,7 +135,7 @@ celery -A config beat --loglevel=info
 La configuration `docker-compose.yml` orchestre l'ensemble de la pile de production :
 - `web` : Django servi par Gunicorn (3 workers, 2 threads) adossé à SQLite persistant.
 - `celery_worker` : Traitement asynchrone des tâches.
-- `celery_beat` : Ordonnanceur périodique (purge des journaux d'idempotence; aucun payout n'est planifié).
+- `celery_beat` : Ordonnanceur périodique (purge des journaux d'idempotence; libération automatique des séquestres expirés vers le portefeuille vendeur).
 - `redis` : Cache et courtier de messages.
 - `nginx` : Reverse proxy HTTP/HTTPS avec support Let's Encrypt / Certbot.
 - `postgres` : Conteneur PostgreSQL 16 prêt à l'emploi via profil `--profile postgres`.
@@ -162,11 +167,13 @@ Consultez le guide [docs/checklist_production.md](docs/checklist_production.md) 
 | `/api/offers/{code}/checkout/` | `POST` | Acheteur | Commande directe sur Paylink (instantané immuable + séquestre) |
 | `/api/payments/` | `GET` / `POST` | Client / Vendeur | Liste et création de séquestre (commission 1% FCFA) |
 | `/api/payments/{id}/` | `GET` | Parties prenantes | Consultation détaillée d'un séquestre |
-| `/api/payments/{id}/release/` | `POST` | Acheteur | Non disponible tant que GeniusPay ne documente pas le payout |
+| `/api/payments/{id}/release/` | `POST` | Acheteur | Libération vers le portefeuille interne du vendeur (`net_amount`) |
 | `/api/payments/{id}/refund/` | `POST` | Administrateur | Remboursement de l'acheteur |
 | `/api/payments/{id}/dispute/` | `POST` | Acheteur | Ouverture d'un litige suspendant le timer |
-| `/api/payments/{id}/confirm-delivery/` | `POST` | Acheteur / Livreur | Vérification OTP; ne libère pas les fonds sans payout provider |
-| `/api/payments/auto-release/` | `POST` | Administrateur | Désactivé tant qu'un endpoint payout n'est pas documenté |
+| `/api/payments/{id}/sync/` | `POST` | Parties prenantes | Réconciliation avec `GET /payments/{reference}` (webhook manqué) |
+| `/api/geniuspay/account/` | `GET` | Administrateur | Solde et informations du compte marchand GeniusPay |
+| `/api/payments/{id}/confirm-delivery/` | `POST` | Acheteur / Livreur | Vérification OTP et libération vers le portefeuille vendeur |
+| `/api/payments/auto-release/` | `POST` | Administrateur | Libère les séquestres expirés vers le portefeuille vendeur |
 | `/api/disputes/{id}/resolve/` | `POST` | Administrateur | Arbitrage souverain du litige (`release` ou `refund`) |
 | `/api/kyc/` | `GET` / `POST` | Authentifié | Consultation et soumission de pièce d'identité |
 | `/api/kyc/{id}/review/` | `POST` | Administrateur | Validation ou rejet motivé d'un dossier KYC |
@@ -181,22 +188,84 @@ Consultez le guide [docs/checklist_production.md](docs/checklist_production.md) 
 - **Roadmap & Architecture Future :** `http://127.0.0.1:8000/docs/future_update.html`
 - **Audit de Sécurité Pentest :** [`docs/security_audit.md`](docs/security_audit.md)
 - **Checklist Déploiement Live :** [`docs/checklist_production.md`](docs/checklist_production.md)
+- **Guide partenariat PSP & CGU :** [`docs/partenariat_payout.txt`](docs/partenariat_payout.txt) • [`docs/partenariat_payout.html`](docs/partenariat_payout.html)
 
 ---
 
 ## 🧪 Tests Automatisés
 
-Le projet comprend une suite complète de **55 tests d'intégration et unitaires**, couvrant la totalité des flux critiques (authentification, séquestres, litiges, auto-release, webhooks, paylinks, snapshots et OTP) :
+Le projet comprend une suite complète de **103 tests d'intégration et unitaires**, couvrant la totalité des flux critiques (authentification, séquestres, litiges, auto-release, webhooks, paylinks, snapshots et OTP) :
 
 ```bash
 python manage.py test escrow
 ```
 
 ```text
-Ran 55 tests in 119.2s
+Ran 103 tests
 OK
-Destroying test database for alias 'default'...
 ```
+
+---
+
+## ⚖️ Partenariat PSP & documents légaux (en cours)
+
+> **Statut :** un PSP/EME partenaire a été identifié. Intégration en attente de sa réponse contractuelle. **Aucun partenariat signé, aucune CGU publiée à ce jour.**
+
+**Guide de travail :** [`docs/partenariat_payout.txt`](docs/partenariat_payout.txt) (source, sections 1 à 18) • [`docs/partenariat_payout.html`](docs/partenariat_payout.html) (version lisible et imprimable)
+
+### Pourquoi un PSP/EME
+
+Aujourd'hui, les paiements arrivent sur le **compte marchand GeniusPay de 0xSeq**, puis sont crédités dans un portefeuille interne. La plateforme conserve donc des fonds pour compte de tiers, même si le fournisseur technique est agréé. Deux sorties possibles :
+
+| Modèle | Détention des fonds | Conséquence pour 0xSeq |
+|---|---|---|
+| **Sous-marchand PSP** (cible) | Le PSP, sur un compte rattaché au vendeur | 0xSeq reste plateforme technique, pas dépositaire |
+| **Paiement direct au vendeur** | Personne (le vendeur est payé avant livraison) | Plus de séquestre réel, autre modèle de confiance |
+| **Custodial actuel** | 0xSeq via son compte marchand | Partenaire agréé obligatoire, CGU prudentes |
+
+Le modèle retenu est le **compte sous-marchand** : le PSP encaisse et conserve, 0xSeq instruit le payout après confirmation de livraison.
+
+### Les 4 réponses du PSP qui conditionnent les CGU
+
+| Question | Impact sur les documents |
+|---|---|
+| Qui est **juridiquement dépositaire** des fonds ? | Phrase centrale des CGU et des mentions légales |
+| **Comptes sous-marchands / split payment** ? | Statut du vendeur (client du PSP ou utilisateur de 0xSeq) |
+| **API de payout** + webhooks documentés ? | Ce qui peut être promis : « automatique » ou « sous X jours ouvrés » |
+| **Qui réalise le KYC** vendeur ? | Répartition des obligations KYC/AML dans les CGU |
+
+Ces réponses déterminent aussi le code : `provider_account_id` sur le vendeur, modèle `Payout`, interface `PayoutProvider`, réconciliation.
+
+### Formulations prévues
+
+**Non-détention (modèle cible) :**
+> « Les paiements sont collectés et conservés par [PSP], établissement de paiement agréé par la BCEAO sous le numéro [X]. 0xSeq fournit le service de coordination de la commande et de la livraison et n'agit pas comme dépositaire des fonds. »
+
+**Custodial avec partenaire (si le modèle intermédiaire est conservé) :**
+> « 0xSeq agit en qualité de mandataire de [PSP] pour la coordination des paiements ; les fonds sont détenus par [PSP] sur des comptes séparés. »
+
+**À proscrire tant que ce n'est pas vrai :** « séquestre garanti par 0xSeq », « 0xSeq est un séquestre agréé », « vos fonds sont garantis ».
+
+### Point de vigilance : la transition
+
+Tant que le code encaisse sur le compte marchand 0xSeq et crédite un portefeuille interne, les CGU **ne peuvent pas** affirmer que 0xSeq ne détient pas les fonds. Les documents doivent donc être publiés **au moment de la bascule technique**, ou dans une version honnête sur l'état actuel puis mis à jour.
+
+### Documents à produire
+
+- [ ] **CGU** : rôle de 0xSeq, rôle du PSP, dépositaire, délais de libération et de payout, litiges, commission 1 %, responsabilité, résiliation
+- [ ] **Mentions légales** : raison sociale, forme juridique, capital, RCCM, DFE, siège, contact, directeur de publication, hébergeur, PSP partenaire + numéro d'agrément BCEAO
+- [ ] **Politique de confidentialité** : données acheteurs/vendeurs, base légale, durées de conservation, sous-traitants (dont le PSP), droits des personnes
+- [ ] **Grille de contrôle** : chaque promesse des CGU doit avoir une implémentation vérifiable dans le code
+- [ ] **Relecture par un juriste UEMOA/BCEAO** avant publication
+
+### Impacts techniques à prévoir
+
+- [ ] `provider_account_id` sur le vendeur (identifiant chez le PSP)
+- [ ] Modèle `Payout` : montant, opérateur, statut, référence interne, référence fournisseur, `idempotency_key`
+- [ ] Interface `PayoutProvider` + adaptateur PSP (`initiate_payout`, `verify_payout`, `handle_webhook`)
+- [ ] Webhooks `payout.completed` / `payout.failed` signés + réconciliation périodique
+- [ ] Feature flag `PAYOUT_PROVIDER=manual|<psp>` pour conserver le mode manuel en secours
+- [ ] Le portefeuille interne devient un miroir du solde PSP, ou disparaît
 
 ---
 

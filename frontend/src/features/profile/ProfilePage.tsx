@@ -1,34 +1,49 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  User,
-  ShieldCheck,
-  Mail,
-  Phone,
-  Key,
   BadgeCheck,
-  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/api';
+import { roleLabel } from '@/lib/roles';
 
 export const ProfilePage: React.FC = () => {
-  const { user, isDemoMode } = useAuth();
+  const { user, setUser, refreshUser } = useAuth();
 
-  const [fullName, setFullName] = useState(user?.full_name || 'Abdoul Diallo');
-  const [email, setEmail] = useState(user?.email || 'a.diallo@example.com');
-  const [phone, setPhone] = useState(user?.phone || '+221 77 123 45 67');
+  const [fullName, setFullName] = useState(user?.full_name || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    setFullName(user?.full_name || '');
+    setEmail(user?.email || '');
+    setPhone(user?.phone || '');
+  }, [user?.id, user?.full_name, user?.email, user?.phone]);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await api.updateMe({ full_name: fullName, email, phone });
+      setUser(updated);
+      await refreshUser();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err: any) {
+      setError(err.message || "Impossible d'enregistrer les modifications.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-3xl">
+    <div className="space-y-6 animate-page-enter max-w-3xl">
       <div>
         <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-[#F4F6FC]">
           Paramètres du Profil
@@ -38,7 +53,7 @@ export const ProfilePage: React.FC = () => {
         </p>
       </div>
 
-      <Card className="p-6">
+      <Card className="p-6 opacity-0 animate-enter stagger-1" style={{ animationFillMode: 'forwards' }}>
         <form onSubmit={handleSave} className="space-y-5">
           <div className="flex items-center gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
             <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#7B3DFF] to-[#00E5FF] p-0.5">
@@ -52,12 +67,18 @@ export const ProfilePage: React.FC = () => {
                 @{user?.username || 'utilisateur'}
               </h3>
               <div className="flex items-center gap-2 mt-1">
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  <BadgeCheck size={14} />
-                  KYC Vérifié
-                </span>
+                {user?.is_kyc_approved ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    <BadgeCheck size={14} />
+                    KYC Vérifié
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                    KYC Non Vérifié
+                  </span>
+                )}
                 <span className="text-[11px] text-slate-400">
-                  Rôle : {user?.role || 'Client'}
+                  Rôle : {roleLabel(user?.role)}
                 </span>
               </div>
             </div>
@@ -68,7 +89,6 @@ export const ProfilePage: React.FC = () => {
               label="Nom complet"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              required
             />
 
             <Input
@@ -88,13 +108,19 @@ export const ProfilePage: React.FC = () => {
           />
 
           {saved && (
-            <p className="text-xs font-semibold text-emerald-500">
+            <p className="text-xs font-semibold text-emerald-500 animate-enter" style={{ animationFillMode: 'forwards' }}>
               Modifications enregistrées avec succès.
             </p>
           )}
 
+          {error && (
+            <p className="text-xs font-semibold text-rose-500 animate-enter" style={{ animationFillMode: 'forwards' }}>
+              {error}
+            </p>
+          )}
+
           <div className="pt-2">
-            <Button variant="primary" size="sm" type="submit">
+            <Button variant="primary" size="sm" type="submit" isLoading={saving}>
               Enregistrer les modifications
             </Button>
           </div>

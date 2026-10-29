@@ -5,12 +5,116 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import APIKey, Dispute, KYCVerification, Offer, Paiement, User
+from .models import (
+    APIKey,
+    Dispute,
+    KYCVerification,
+    Offer,
+    Paiement,
+    PlatformSettings,
+    User,
+    WalletTransaction,
+)
 
 
 # ─── Inscription & Auth Développeur ───────────────────────────────────────────
 
-class DeveloperTokenObtainPairSerializer(TokenObtainPairSerializer):
+class UserProfileSerializer(serializers.ModelSerializer):
+    """Profil public de l'utilisateur connecté."""
+
+    is_kyc_approved = serializers.SerializerMethodField()
+    kyc_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "email",
+            "role",
+            "full_name",
+            "phone",
+            "is_staff",
+            "is_kyc_approved",
+            "kyc_status",
+        )
+        read_only_fields = ("id", "username", "role", "is_staff", "is_kyc_approved", "kyc_status")
+
+    def get_is_kyc_approved(self, obj: User) -> bool:
+        return obj.is_kyc_approved()
+
+    def get_kyc_status(self, obj: User) -> str:
+        return obj.kyc.status if hasattr(obj, "kyc") else "UNVERIFIED"
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    """Changement de mot de passe de l'utilisateur connecté."""
+
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password2 = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_old_password(self, value: str) -> str:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not user.check_password(value):
+            raise serializers.ValidationError("Mot de passe actuel incorrect.")
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        if attrs["new_password"] != attrs["new_password2"]:
+            raise serializers.ValidationError(
+                {"new_password2": "Les mots de passe ne correspondent pas."}
+            )
+        if attrs["new_password"] == attrs["old_password"]:
+            raise serializers.ValidationError(
+                {"new_password": "Le nouveau mot de passe doit être différent de l'actuel."}
+            )
+        return attrs
+
+    def save(self, **kwargs) -> User:
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return user
+
+
+class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Authentification JWT standard. Accepte username OU email et renvoie le
+    profil complet pour éviter au frontend de deviner le rôle depuis le JWT.
+    """
+
+    def validate(self, attrs: dict) -> dict:
+        identifier = str(attrs.get(self.username_field, "")).strip()
+        if identifier and "@" in identifier:
+            user = User.objects.filter(email__iexact=identifier).only("username").first()
+            if user:
+                attrs[self.username_field] = user.username
+
+        data = super().validate(attrs)
+        user = self.user
+        data.update({
+            "role": user.role,
+            "username": user.username,
+            "email": user.email,
+            "user_id": user.pk,
+            "user": UserProfileSerializer(user).data,
+        })
+        return data
+
+    @classmethod
+    def get_token(cls, user: User):
+        token = super().get_token(user)
+        token["role"] = user.role
+        token["username"] = user.username
+        token["email"] = user.email
+        token["full_name"] = user.full_name
+        token["is_kyc_approved"] = user.is_kyc_approved()
+        return token
+
+
+class DeveloperTokenObtainPairSerializer(EmailOrUsernameTokenObtainPairSerializer):
     """
     Authentification JWT réservée aux développeurs.
     Refuse les comptes qui ne disposent pas du rôle developer (ou admin).
@@ -190,20 +294,36 @@ class ConfirmDeliverySerializer(serializers.Serializer):
 
 class PaiementSerializer(serializers.ModelSerializer):
     seller = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role__in=["seller", "member", "client"])
+        queryset=User.objects.filter(role__in=["seller", "member", "client"]),
+        required=False,
     )
+    seller_username = serializers.CharField(write_only=True, required=False, allow_blank=False)
+    buyer_username   = serializers.CharField(source="buyer.username", read_only=True)
+    buyer_name       = serializers.CharField(read_only=True)
+    seller_name      = serializers.CharField(read_only=True)
+    reference        = serializers.CharField(read_only=True)
+    offer_code       = serializers.CharField(source="offer.code", read_only=True, allow_null=True)
+    role_current_user = serializers.SerializerMethodField()
+    dispute_reason   = serializers.CharField(read_only=True)
 
     class Meta:
         model  = Paiement
         fields = (
             "id",
+            "reference",
             "offer",
+            "offer_code",
             "item_title",
             "item_description",
+            "delivery_terms",
             "initiator_role",
             "delivery_otp",
             "buyer",
+            "buyer_username",
+            "buyer_name",
             "seller",
+            "seller_username",
+            "seller_name",
             "amount",
             "currency",
             "commission_rate",
@@ -213,15 +333,23 @@ class PaiementSerializer(serializers.ModelSerializer):
             "escrow_id",
             "provider_reference",
             "checkout_url",
+            "role_current_user",
+            "blocked_at",
             "auto_release_at",
+            "dispute_reason",
             "created_at",
             "updated_at",
         )
         read_only_fields = (
             "id",
+            "reference",
             "offer",
+            "offer_code",
             "delivery_otp",
             "buyer",
+            "buyer_username",
+            "buyer_name",
+            "seller_name",
             "currency",
             "commission_rate",
             "fee_amount",
@@ -230,10 +358,23 @@ class PaiementSerializer(serializers.ModelSerializer):
             "escrow_id",
             "provider_reference",
             "checkout_url",
+            "role_current_user",
+            "blocked_at",
             "auto_release_at",
+            "dispute_reason",
             "created_at",
             "updated_at",
         )
+
+    def get_role_current_user(self, obj: Paiement) -> str | None:
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+        if obj.buyer_id == request.user.pk:
+            return "buyer"
+        if obj.seller_id == request.user.pk:
+            return "seller"
+        return None
 
     def to_representation(self, instance):
         """
@@ -246,6 +387,8 @@ class PaiementSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or request.user != instance.buyer:
             data.pop("delivery_otp", None)
+        # seller_username est write_only à la création mais utile en lecture.
+        data["seller_username"] = instance.seller.username
         return data
 
     def validate_amount(self, amount):
@@ -263,6 +406,30 @@ class PaiementSerializer(serializers.ModelSerializer):
         if request and seller == request.user:
             raise serializers.ValidationError("Tu ne peux pas être ton propre vendeur.")
         return seller
+
+    def validate(self, attrs: dict) -> dict:
+        seller_username = attrs.pop("seller_username", None)
+        if seller_username:
+            seller = User.objects.filter(
+                username=seller_username,
+                role__in=["seller", "member", "client"],
+            ).first()
+            if seller is None:
+                raise serializers.ValidationError(
+                    {"seller_username": "Aucun vendeur ne correspond à ce nom d'utilisateur."}
+                )
+            if "seller" in attrs and attrs["seller"] != seller:
+                raise serializers.ValidationError(
+                    {"seller_username": "Le nom d'utilisateur ne correspond pas au vendeur indiqué."}
+                )
+            attrs["seller"] = seller
+
+        if "seller" not in attrs:
+            raise serializers.ValidationError(
+                {"seller_username": "Veuillez renseigner le nom d'utilisateur du vendeur."}
+            )
+        attrs["seller"] = self.validate_seller(attrs["seller"])
+        return attrs
 
 
 class PaiementStatusSerializer(serializers.ModelSerializer):
@@ -340,12 +507,26 @@ class APIKeySerializer(serializers.ModelSerializer):
 
 class DisputeSerializer(serializers.ModelSerializer):
     opened_by_username = serializers.CharField(source="opened_by.username", read_only=True)
+    paiement_reference = serializers.CharField(source="paiement.reference", read_only=True)
+    paiement_title     = serializers.CharField(source="paiement.item_title", read_only=True)
+    paiement_amount    = serializers.DecimalField(
+        source="paiement.amount", max_digits=12, decimal_places=2, read_only=True
+    )
+    paiement_status    = serializers.CharField(source="paiement.status", read_only=True)
+    buyer_username     = serializers.CharField(source="paiement.buyer.username", read_only=True)
+    seller_username    = serializers.CharField(source="paiement.seller.username", read_only=True)
 
     class Meta:
         model  = Dispute
         fields = (
             "id",
             "paiement",
+            "paiement_reference",
+            "paiement_title",
+            "paiement_amount",
+            "paiement_status",
+            "buyer_username",
+            "seller_username",
             "opened_by",
             "opened_by_username",
             "reason",
@@ -358,6 +539,12 @@ class DisputeSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "id",
             "paiement",
+            "paiement_reference",
+            "paiement_title",
+            "paiement_amount",
+            "paiement_status",
+            "buyer_username",
+            "seller_username",
             "opened_by",
             "opened_by_username",
             "status",
@@ -381,10 +568,16 @@ class DisputeResolveSerializer(serializers.Serializer):
 # ─── Module KYC (Know Your Customer) ──────────────────────────────────────────
 
 class KYCVerificationSerializer(serializers.ModelSerializer):
+    user_username = serializers.CharField(source="user.username", read_only=True)
+    user_email    = serializers.CharField(source="user.email", read_only=True)
+
     class Meta:
         model  = KYCVerification
         fields = (
             "id",
+            "user",
+            "user_username",
+            "user_email",
             "id_type",
             "id_number",
             "full_name",
@@ -396,11 +589,30 @@ class KYCVerificationSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             "id",
+            "user",
+            "user_username",
+            "user_email",
             "status",
             "rejection_reason",
             "submitted_at",
             "reviewed_at",
         )
+
+    def to_internal_value(self, data):
+        # Compatibilité avec les anciens clients qui envoyaient CNI / PASSPORT / PERMIS.
+        if hasattr(data, "copy"):
+            data = data.copy()
+            aliases = {
+                "CNI": "cni",
+                "PASSPORT": "passport",
+                "PERMIS": "driving_license",
+                "PERMIS_DE_CONDUIRE": "driving_license",
+                "DRIVING_LICENSE": "driving_license",
+            }
+            raw_type = data.get("id_type")
+            if isinstance(raw_type, str):
+                data["id_type"] = aliases.get(raw_type.strip().upper(), raw_type.strip().lower())
+        return super().to_internal_value(data)
 
     def validate_document_url(self, value: str) -> str:
         if value:
@@ -420,3 +632,80 @@ class KYCReviewSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=["APPROVED", "REJECTED"])
     rejection_reason = serializers.CharField(required=False, allow_blank=True, default="")
 
+
+# ─── Portefeuille interne ────────────────────────────────────────────────────
+
+class WalletTransactionSerializer(serializers.ModelSerializer):
+    type_label = serializers.CharField(source="get_type_display", read_only=True)
+    method_label = serializers.CharField(source="get_method_display", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = WalletTransaction
+        fields = (
+            "id",
+            "reference",
+            "type",
+            "type_label",
+            "amount",
+            "fee",
+            "method",
+            "method_label",
+            "phone",
+            "beneficiary_name",
+            "status",
+            "status_label",
+            "provider_reference",
+            "failure_reason",
+            "created_at",
+            "completed_at",
+        )
+        read_only_fields = fields
+
+
+class WalletMovementCreateSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("1000.00"))
+    method = serializers.ChoiceField(choices=[c[0] for c in WalletTransaction.METHOD_CHOICES])
+    phone = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
+    beneficiary_name = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default=""
+    )
+
+    def validate(self, attrs):
+        if attrs["method"] in ("WAVE", "ORANGE_MONEY", "MTN_MOMO") and not attrs.get("phone"):
+            raise serializers.ValidationError(
+                {"phone": "Le numéro Mobile Money est requis pour ce moyen de paiement."}
+            )
+        return attrs
+
+
+# ─── Configuration plateforme ────────────────────────────────────────────────
+
+class PlatformSettingsSerializer(serializers.ModelSerializer):
+    commission_rate_percent = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0.00"), max_value=Decimal("100.00")
+    )
+
+    class Meta:
+        model = PlatformSettings
+        fields = (
+            "auto_release_delay_days",
+            "commission_rate_percent",
+            "min_escrow_amount",
+            "maintenance_mode",
+            "announcement",
+            "updated_at",
+        )
+        read_only_fields = ("updated_at",)
+
+    def validate_auto_release_delay_days(self, value: int) -> int:
+        if value < 1 or value > 30:
+            raise serializers.ValidationError("Le délai doit être compris entre 1 et 30 jours.")
+        return value
+
+    def validate_announcement(self, value):
+        if value in (None, {}):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("L'annonce doit être un objet JSON.")
+        return value

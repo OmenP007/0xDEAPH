@@ -1,18 +1,20 @@
 import logging
 import secrets
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import FileResponse, Http404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import (
     CreateAPIView,
+    ListAPIView,
     ListCreateAPIView,
     RetrieveAPIView,
 )
@@ -23,7 +25,16 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import APIKey, Dispute, KYCVerification, Offer, Paiement
+from .models import (
+    APIKey,
+    Dispute,
+    KYCVerification,
+    Offer,
+    Paiement,
+    PlatformSettings,
+    User,
+    WalletTransaction,
+)
 from .permissions import IsAdmin, IsClient, IsDeveloper, IsOwnerOrAdmin
 from .serializers import (
     APIKeyCreateSerializer,
@@ -34,6 +45,7 @@ from .serializers import (
     DisputeCreateSerializer,
     DisputeResolveSerializer,
     DisputeSerializer,
+    EmailOrUsernameTokenObtainPairSerializer,
     GeniusPayRefundSerializer,
     KYCReviewSerializer,
     KYCVerificationSerializer,
@@ -41,10 +53,21 @@ from .serializers import (
     OfferPublicSerializer,
     OfferSerializer,
     PaiementSerializer,
+    PasswordChangeSerializer,
     PaiementStatusSerializer,
+    PlatformSettingsSerializer,
+    UserProfileSerializer,
     UserRegistrationSerializer,
+    WalletMovementCreateSerializer,
+    WalletTransactionSerializer,
 )
-from .services import GeniusPayError, GeniusPayService, auto_release_expired_escrows
+from .services import (
+    EscrowReleaseError,
+    GeniusPayError,
+    GeniusPayService,
+    auto_release_expired_escrows,
+    release_funds,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +107,49 @@ class RegisterView(CreateAPIView):
     throttle_scope     = "auth"
 
 
+# ─── Compte connecté ─────────────────────────────────────────────────────────
+
+@extend_schema(tags=["Authentification"])
+class MeView(APIView):
+    """GET/PATCH — Profil de l'utilisateur connecté."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        return Response(UserProfileSerializer(request.user).data)
+
+    def patch(self, request: Request) -> Response:
+        serializer = UserProfileSerializer(
+            request.user, data=request.data, partial=True, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+@extend_schema(tags=["Authentification"])
+class PasswordChangeView(APIView):
+    """POST — Change le mot de passe de l'utilisateur connecté."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "sensitive"
+
+    def post(self, request: Request) -> Response:
+        serializer = PasswordChangeSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Mot de passe mis à jour avec succès."})
+
+
+@extend_schema(tags=["Authentification"])
+class EmailOrUsernameTokenObtainPairView(TokenObtainPairView):
+    """Connexion standard avec username ou email."""
+
+    serializer_class = EmailOrUsernameTokenObtainPairSerializer
+
+
 # ─── Espace Développeur ───────────────────────────────────────────────────────
 
 @extend_schema(tags=["Espace Développeur"])
@@ -112,13 +178,13 @@ class PaiementListCreateView(ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return (
-            Paiement.objects.filter(
-                Q(buyer=self.request.user) | Q(seller=self.request.user)
-            )
-            .select_related("buyer", "seller")
-            .order_by("-created_at")
-        )
+        user = self.request.user
+        queryset = Paiement.objects.select_related(
+            "buyer", "seller", "offer", "dispute"
+        ).order_by("-created_at")
+        if user.role == "deaph" or user.is_staff:
+            return queryset.all()
+        return queryset.filter(Q(buyer=user) | Q(seller=user))
 
     def perform_create(self, serializer):
         if self.request.user.role != "client":
@@ -147,18 +213,19 @@ class PaiementDetailView(RetrieveAPIView):
     def get_queryset(self):
         user = self.request.user
         if user.role == "deaph" or user.is_staff:
-            return Paiement.objects.select_related("buyer", "seller").all()
+            return Paiement.objects.select_related("buyer", "seller", "offer", "dispute").all()
         return Paiement.objects.filter(
             Q(buyer=user) | Q(seller=user)
-        ).select_related("buyer", "seller")
+        ).select_related("buyer", "seller", "offer", "dispute")
 
 
 @extend_schema(tags=["Paiements"])
 class PaiementReleaseView(APIView):
     """
-    POST — Libère les fonds vers le vendeur.
+    POST — Libère les fonds vers le portefeuille interne du vendeur.
     Réservé à l'acheteur (client) du paiement concerné.
-    Transition : BLOCKED → RELEASED.
+    Transition : BLOCKED → RELEASED ; le net vendeur devient disponible pour
+    un retrait Mobile Money.
     """
     permission_classes = [IsAuthenticated]
 
@@ -182,16 +249,15 @@ class PaiementReleaseView(APIView):
                     f"Statut modifié concurremment : {paiement_locked.status}."
                 )
             try:
-                GeniusPayService().release_funds(paiement_locked.provider_reference)
-            except GeniusPayError as exc:
+                release_funds(paiement_locked, actor=request.user)
+            except EscrowReleaseError as exc:
                 logger.error(
-                    "GeniusPay release échoué pour reference=%s : %s",
-                    paiement_locked.provider_reference, exc,
+                    "Libération impossible pour paiement #%s : %s",
+                    paiement_locked.pk, exc,
                 )
-                raise ValidationError(f"Erreur GeniusPay : {exc}")
+                raise ValidationError(str(exc))
 
-            paiement_locked.status = "RELEASED"
-            paiement_locked.save(update_fields=["status", "updated_at"])
+            paiement_locked.refresh_from_db()
 
         logger.info(
             "[Audit] Paiement #%s libéré par l'acheteur #%s",
@@ -263,6 +329,68 @@ class PaiementRefundView(APIView):
             paiement_locked.pk, request.user.pk,
         )
         return Response(PaiementStatusSerializer(paiement_locked).data)
+
+
+@extend_schema(tags=["Paiements"])
+class PaiementSyncStatusView(APIView):
+    """
+    POST — Réconcilie le statut local avec l'état réel chez GeniusPay
+    (`GET /payments/{reference}`).
+
+    Accessible à l'acheteur, au vendeur et aux administrateurs. Cette action
+    répare un webhook manqué : ``completed`` → ``BLOCKED`` et
+    ``refunded`` → ``REFUNDED``. Elle ne libère **jamais** les fonds, car aucun
+    endpoint de payout n'est documenté.
+    """
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    throttle_scope     = "sensitive"
+
+    def post(self, request: Request, pk: int) -> Response:
+        try:
+            paiement = Paiement.objects.get(pk=pk)
+        except Paiement.DoesNotExist:
+            raise NotFound("Paiement introuvable.")
+
+        self.check_object_permissions(request, paiement)
+
+        try:
+            result = GeniusPayService().sync_payment_status(paiement)
+        except GeniusPayError as exc:
+            logger.error(
+                "GeniusPay sync échoué pour paiement #%s : %s", paiement.pk, exc,
+            )
+            raise ValidationError(f"Erreur GeniusPay : {exc}")
+
+        logger.info(
+            "[Audit] Paiement #%s synchronisé par #%s : %s → %s",
+            paiement.pk, request.user.pk,
+            result["previous_status"], result["status"],
+        )
+        return Response(result)
+
+
+@extend_schema(tags=["GeniusPay"])
+class GeniusPayAccountView(APIView):
+    """
+    GET — Solde et informations du compte marchand GeniusPay
+    (`GET /account` + `GET /account/balance`).
+
+    Réservé aux administrateurs : ces montants concernent la plateforme, pas un
+    utilisateur. Aucun solde n'est persisté ni recalculé localement.
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+    throttle_scope     = "sensitive"
+
+    def get(self, request: Request) -> Response:
+        service = GeniusPayService()
+        try:
+            account = service.get_account()
+            balance = service.get_account_balance()
+        except GeniusPayError as exc:
+            logger.error("GeniusPay compte illisible : %s", exc)
+            raise ValidationError(f"Erreur GeniusPay : {exc}")
+
+        return Response({"account": account, "balance": balance})
 
 
 # ─── Clés API ─────────────────────────────────────────────────────────────────
@@ -440,6 +568,23 @@ class PaiementDisputeView(APIView):
 
 
 @extend_schema(tags=["Litiges"])
+class DisputeListView(ListAPIView):
+    """
+    GET — Liste tous les litiges accessibles (administrateurs voient tous les litiges, clients voient leurs litiges).
+    """
+    serializer_class = DisputeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == "deaph" or user.is_staff:
+            return Dispute.objects.select_related("paiement", "opened_by").all().order_by("-created_at")
+        return Dispute.objects.filter(
+            Q(opened_by=user) | Q(paiement__buyer=user) | Q(paiement__seller=user)
+        ).select_related("paiement", "opened_by").order_by("-created_at")
+
+
+@extend_schema(tags=["Litiges"])
 class DisputeDetailResolveView(APIView):
     """
     GET  — Consulte les détails d'un litige.
@@ -481,10 +626,10 @@ class DisputeDetailResolveView(APIView):
 
             if action == "release":
                 try:
-                    GeniusPayService().release_funds(paiement.provider_reference)
-                except GeniusPayError as exc:
-                    logger.error("GeniusPay release échoué pour litige #%s : %s", dispute_locked.pk, exc)
-                    raise ValidationError(f"Libération GeniusPay indisponible : {exc}")
+                    release_funds(paiement, actor=request.user)
+                except EscrowReleaseError as exc:
+                    logger.error("Libération impossible pour litige #%s : %s", dispute_locked.pk, exc)
+                    raise ValidationError(str(exc))
 
                 paiement.status = "RELEASED"
                 dispute_locked.status = "RESOLVED_RELEASE"
@@ -552,6 +697,10 @@ class KYCView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request: Request) -> Response:
+        if (request.user.role == "deaph" or request.user.is_staff) and (request.query_params.get("all") == "true" or request.query_params.get("list") == "true"):
+            kycs = KYCVerification.objects.all().order_by("-submitted_at")
+            return Response(KYCVerificationSerializer(kycs, many=True).data)
+
         try:
             kyc = request.user.kyc
             return Response(KYCVerificationSerializer(kyc).data)
@@ -733,6 +882,7 @@ class OfferCheckoutView(APIView):
                 currency=offer.currency,
                 item_title=offer.title,
                 item_description=offer.description,
+                delivery_terms=offer.delivery_terms,
                 initiator_role="seller",
                 status="CREATED",
             )
@@ -759,10 +909,177 @@ class OfferCheckoutView(APIView):
 
 # ─── Confirmation de Livraison (OTP Livreur) ──────────────────────────────────
 
+# ─── Portefeuille & Configuration plateforme ─────────────────────────────────
+
+def _wallet_balance(user) -> dict:
+    """Calcule le solde disponible à partir du grand livre interne et des séquestres libérés."""
+    completed = WalletTransaction.objects.filter(user=user, status="COMPLETED")
+    topups = completed.filter(type="TOPUP").aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+    withdrawals = completed.filter(type="WITHDRAWAL").aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+    pending_withdrawals = (
+        WalletTransaction.objects.filter(user=user, status="PENDING", type="WITHDRAWAL")
+        .aggregate(total=Sum("amount"))["total"]
+        or Decimal("0.00")
+    )
+    escrow_credits = (
+        Paiement.objects.filter(seller=user, status="RELEASED")
+        .aggregate(total=Sum("net_amount"))["total"]
+        or Decimal("0.00")
+    )
+    balance = escrow_credits + topups - withdrawals
+    available = max(Decimal("0.00"), balance - pending_withdrawals)
+    return {
+        "balance": balance,
+        "available_balance": available,
+        "pending_withdrawals": pending_withdrawals,
+        "escrow_credits": escrow_credits,
+        "topups": topups,
+        "withdrawals": withdrawals,
+    }
+
+
+@extend_schema(tags=["Portefeuille"])
+class WalletView(APIView):
+    """GET — Synthèse et historique du portefeuille interne."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        summary = _wallet_balance(request.user)
+        transactions = WalletTransaction.objects.filter(user=request.user).order_by("-created_at")[:100]
+        return Response({
+            **summary,
+            "wallet_id": f"TRUST-{request.user.username.upper()}-{request.user.pk:02d}",
+            "transactions": WalletTransactionSerializer(transactions, many=True).data,
+        })
+
+
+@extend_schema(tags=["Portefeuille"])
+class WalletTopupView(APIView):
+    """
+    POST — Enregistre une demande de rechargement Mobile Money.
+
+    Le mouvement reste PENDING tant que le fournisseur n'a pas confirmé
+    l'encaissement : la plateforme n'invente jamais de fonds.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "sensitive"
+
+    def post(self, request: Request) -> Response:
+        serializer = WalletMovementCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        movement = WalletTransaction.objects.create(
+            user=request.user,
+            type="TOPUP",
+            status="PENDING",
+            **serializer.validated_data,
+        )
+        return Response(
+            {
+                "detail": "Demande de rechargement enregistrée. Elle sera créditée après confirmation du fournisseur.",
+                "transaction": WalletTransactionSerializer(movement).data,
+                **{k: v for k, v in _wallet_balance(request.user).items()},
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema(tags=["Portefeuille"])
+class WalletWithdrawView(APIView):
+    """
+    POST — Enregistre une demande de retrait Mobile Money.
+
+    Le montant est immédiatement réservé (retrait PENDING) pour empêcher un
+    double retrait. Aucun payout n'étant documenté chez GeniusPay, le statut
+    final doit être confirmé par un administrateur.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "sensitive"
+
+    def post(self, request: Request) -> Response:
+        serializer = WalletMovementCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            summary = _wallet_balance(user)
+            amount = serializer.validated_data["amount"]
+            if amount > summary["available_balance"]:
+                raise ValidationError(
+                    {"amount": f"Solde insuffisant. Disponible : {summary['available_balance']} FCFA."}
+                )
+            movement = WalletTransaction.objects.create(
+                user=user,
+                type="WITHDRAWAL",
+                status="PENDING",
+                **serializer.validated_data,
+            )
+
+        return Response(
+            {
+                "detail": "Demande de retrait enregistrée et montant réservé. En attente de traitement.",
+                "transaction": WalletTransactionSerializer(movement).data,
+                **{k: v for k, v in _wallet_balance(request.user).items()},
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema(tags=["Portefeuille"])
+class WalletTransactionReviewView(APIView):
+    """POST — Confirme ou rejette un mouvement de portefeuille (administrateur)."""
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request: Request, pk: int) -> Response:
+        try:
+            movement = WalletTransaction.objects.get(pk=pk)
+        except WalletTransaction.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("Mouvement introuvable.")
+
+        new_status = str(request.data.get("status", "")).upper()
+        if new_status not in ("COMPLETED", "FAILED"):
+            raise ValidationError({"status": "Valeur attendue : COMPLETED ou FAILED."})
+        if movement.status != "PENDING":
+            raise ValidationError("Ce mouvement a déjà été traité.")
+
+        movement.status = new_status
+        movement.provider_reference = str(request.data.get("provider_reference", ""))[:100]
+        movement.failure_reason = str(request.data.get("failure_reason", ""))[:255]
+        if new_status == "COMPLETED":
+            movement.completed_at = timezone.now()
+        movement.save()
+        return Response(WalletTransactionSerializer(movement).data)
+
+
+@extend_schema(tags=["Configuration"])
+class PlatformSettingsView(APIView):
+    """GET public — paramètres publics ; PATCH admin — mise à jour."""
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsAuthenticated(), IsAdmin()]
+
+    def get(self, request: Request) -> Response:
+        return Response(PlatformSettingsSerializer(PlatformSettings.get_solo()).data)
+
+    def patch(self, request: Request) -> Response:
+        instance = PlatformSettings.get_solo()
+        serializer = PlatformSettingsSerializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
 @extend_schema(tags=["Paiements"])
 class PaiementConfirmDeliveryView(APIView):
     """
-    POST — Confirme la livraison et libère les fonds :
+    POST — Confirme la livraison et libère les fonds vers le portefeuille du
+           vendeur :
            - Par l'acheteur directement.
            - OU par le vendeur/livreur en transmettant le code OTP secret fourni par l'acheteur.
     """
@@ -808,13 +1125,12 @@ class PaiementConfirmDeliveryView(APIView):
                 raise ValidationError(f"Statut modifié concurremment : {paiement_locked.status}.")
 
             try:
-                GeniusPayService().release_funds(paiement_locked.provider_reference)
-            except GeniusPayError as exc:
-                logger.error("GeniusPay release échoué lors de la livraison paiement #%s : %s", paiement_locked.pk, exc)
-                raise ValidationError(f"Erreur GeniusPay : {exc}")
+                release_funds(paiement_locked, actor=request.user)
+            except EscrowReleaseError as exc:
+                logger.error("Libération impossible lors de la livraison #%s : %s", paiement_locked.pk, exc)
+                raise ValidationError(str(exc))
 
-            paiement_locked.status = "RELEASED"
-            paiement_locked.save(update_fields=["status", "updated_at"])
+            paiement_locked.refresh_from_db()
 
         logger.info(
             "[Audit] Livraison confirmée pour Paiement #%s par utilisateur #%s (Méthode: %s)",

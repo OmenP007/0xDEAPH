@@ -15,13 +15,15 @@ import {
   Zap,
   RefreshCw,
   ExternalLink,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useTheme } from '@/context/ThemeContext';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, resolvedTheme, toggleTheme } = useTheme();
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   const steps = [
@@ -102,6 +104,14 @@ export const LandingPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Dark/Light mode toggle */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
+              title={resolvedTheme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+            >
+              {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             <Button variant="ghost" size="sm" onClick={() => navigate('/login')}>
               Connexion
             </Button>
@@ -119,13 +129,12 @@ export const LandingPage: React.FC = () => {
         <div className="absolute top-1/3 right-1/4 w-[300px] h-[200px] bg-[#00E5FF]/10 blur-[100px] rounded-full pointer-events-none" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#7B3DFF]/10 border border-[#7B3DFF]/20 text-[#7B3DFF] dark:text-[#a277ff] text-xs font-semibold mb-8 animate-fade-in">
-            <Sparkles size={14} />
-            <span>Séquestre numérique & Protection financière</span>
-          </div>
-
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight max-w-4xl mx-auto leading-[1.1] text-slate-900 dark:text-[#F4F6FC]">
-            Vos transactions,{' '}
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight max-w-4xl mx-auto leading-[1.15] text-slate-900 dark:text-[#F4F6FC] opacity-0 animate-enter stagger-1" style={{ animationFillMode: 'forwards' }}>
+            Avec{' '}
+            <span className="bg-gradient-to-r from-[#7B3DFF] via-[#00E5FF] to-[#9e6bfa] bg-clip-text text-transparent animate-text-shimmer">
+              Trust
+            </span>
+            , vos transactions{' '}
             <span className="bg-gradient-to-r from-[#7B3DFF] via-[#9e6bfa] to-[#00E5FF] bg-clip-text text-transparent">
               en toute confiance.
             </span>

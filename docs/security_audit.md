@@ -172,7 +172,7 @@ Destroying test database for alias 'default'...
 * **Tests Paylinks & Offres Vendeur :** Création réservée aux vendeurs, consultation publique avec badge KYC, snapshots immuables.
 * **Tests OTP & Livraison Sécurisée :** Masquage de `delivery_otp` pour le vendeur, validation temps-constant via OTP ou confirmation directe acheteur.
 * **Tests Webhooks :** Validation de signature HMAC SHA-256 avec/sans timestamp, idempotence, neutralisation des rejeux.
-* **Tests GeniusPay & Tâches de Fond :** Simulation de l'API GeniusPay (checkout, refund), blocage strict des payouts non documentés, purge quotidienne de l'idempotence via Celery.
+* **Tests GeniusPay & Tâches de Fond :** Simulation de l'API GeniusPay (checkout, refund, lecture), libération des séquestres vers le portefeuille interne et purge quotidienne de l'idempotence via Celery.
 
 ---
 

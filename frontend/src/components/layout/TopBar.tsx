@@ -14,11 +14,15 @@ import {
   LogOut,
   User,
   Shield,
+  ShieldAlert,
   HelpCircle,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
+import { canManageApiKeys, isAdmin } from '@/lib/roles';
+import { useAppNotifications } from '@/hooks/useAppNotifications';
+import { formatDate } from '@/lib/utils';
 
 interface TopBarProps {
   onOpenMobileNav: () => void;
@@ -26,7 +30,7 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
   const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
-  const { user, isDemoMode, toggleDemoMode, logout } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -58,6 +62,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
         return { title: 'Sécurité & Vérification KYC', breadcrumb: 'Compte > Conformité' };
       case '/notifications':
         return { title: 'Centre de Notifications', breadcrumb: 'Compte > Alertes' };
+      case '/admin':
+        return { title: 'Console d\'Arbitrage & Modération', breadcrumb: 'Administration > Supervision' };
       case '/profile':
         return { title: 'Paramètres du Profil', breadcrumb: 'Compte > Profil' };
       default:
@@ -67,32 +73,24 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
 
   const meta = getPageMeta(location.pathname);
 
-  const mockNotifications = [
-    {
-      id: 1,
-      title: 'Fonds séquestrés reçus',
-      desc: 'MacBook Pro 16" : 1 450 000 FCFA bloqués avec succès.',
-      time: 'Il y a 25 min',
-      icon: Clock,
-      color: 'text-amber-400 bg-amber-400/10',
-    },
-    {
-      id: 2,
-      title: 'Paiement débloqué avec succès',
-      desc: 'Prestation Dev Web : 594 000 FCFA versés sur votre solde.',
-      time: 'Il y a 3 heures',
-      icon: CheckCircle2,
-      color: 'text-emerald-400 bg-emerald-400/10',
-    },
-    {
-      id: 3,
-      title: 'Vérification KYC Approuvée',
-      desc: 'Votre compte est validé au niveau maximal.',
-      time: 'Hier',
-      icon: Shield,
-      color: 'text-purple-400 bg-purple-400/10',
-    },
-  ];
+  const { notifications, unreadCount, markAllRead } = useAppNotifications();
+  const notificationsWithIcon = notifications.slice(0, 6).map((n) => ({
+    ...n,
+    icon:
+      n.type === 'dispute'
+        ? AlertCircle
+        : n.type === 'wallet'
+        ? Clock
+        : n.type === 'escrow'
+        ? CheckCircle2
+        : Sparkles,
+    color:
+      n.type === 'dispute'
+        ? 'bg-rose-500/10 text-rose-400'
+        : n.type === 'wallet'
+        ? 'bg-emerald-500/10 text-emerald-400'
+        : 'bg-[#7B3DFF]/10 text-[#7B3DFF]',
+  }));
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0B0F14]/80 backdrop-blur-md px-4 sm:px-6">
@@ -116,23 +114,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
         </div>
       </div>
 
-      {/* Right section: Demo Mode Pill, Search, ThemeToggle, Notifications, User Menu */}
+      {/* Right section: ThemeToggle, Notifications, User Menu */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Demo Mode Toggle Switch */}
-        <button
-          onClick={toggleDemoMode}
-          className={cn(
-            'hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200',
-            isDemoMode
-              ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
-              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20'
-          )}
-          title="Basculer entre les données de démonstration et l'API réelle"
-        >
-          <span className={cn('w-2 h-2 rounded-full', isDemoMode ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400')} />
-          {isDemoMode ? 'Démo Active' : 'API En Direct'}
-        </button>
-
         {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
@@ -150,41 +133,64 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
             title="Notifications"
           >
             <Bell size={18} />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#7B3DFF]" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#7B3DFF]" />
+            )}
           </button>
 
           {notificationsOpen && (
             <div
-              className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-[#131820] border border-slate-200 dark:border-slate-800 shadow-xl p-4 z-50 animate-fade-in"
+              className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-[#131820] border border-slate-200 dark:border-slate-800 shadow-xl p-4 z-50 animate-modal-enter"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                 <span className="font-semibold text-sm text-slate-900 dark:text-[#F4F6FC]">
                   Notifications récentes
                 </span>
-                <span className="text-xs text-[#7B3DFF] hover:underline cursor-pointer">
-                  Tout marquer comme lu
-                </span>
+                {notifications.length > 0 && (
+                  <button
+                    onClick={markAllRead}
+                    className="text-xs text-[#7B3DFF] hover:underline cursor-pointer"
+                  >
+                    Tout marquer comme lu
+                  </button>
+                )}
               </div>
               <div className="py-2 divide-y divide-slate-100 dark:divide-slate-800/60 max-h-72 overflow-y-auto">
-                {mockNotifications.map((notif) => (
-                  <div key={notif.id} className="py-3 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 px-2 rounded-xl transition-colors cursor-pointer">
-                    <div className={cn('p-2 rounded-xl shrink-0 mt-0.5', notif.color)}>
-                      <notif.icon size={16} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-slate-900 dark:text-[#F4F6FC]">
-                        {notif.title}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                        {notif.desc}
-                      </p>
-                      <span className="text-[10px] text-slate-400 mt-1 block">
-                        {notif.time}
-                      </span>
-                    </div>
+                {notificationsWithIcon.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-slate-400">
+                    Aucune nouvelle notification.
                   </div>
-                ))}
+                ) : (
+                  notificationsWithIcon.map((notif) => (
+                    <button
+                      key={notif.id}
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        if (notif.link) navigate(notif.link);
+                      }}
+                      className={cn(
+                        'w-full text-left py-3 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 px-2 rounded-xl transition-colors',
+                        notif.read && 'opacity-60'
+                      )}
+                    >
+                      <div className={cn('p-2 rounded-xl shrink-0 mt-0.5', notif.color)}>
+                        <notif.icon size={16} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 dark:text-[#F4F6FC]">
+                          {notif.title}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                          {notif.desc}
+                        </p>
+                        <span className="text-[10px] text-slate-400 mt-1 block">
+                          {formatDate(notif.date)}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
               <button
                 onClick={() => {
@@ -217,7 +223,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
 
           {userMenuOpen && (
             <div
-              className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-[#131820] border border-slate-200 dark:border-slate-800 shadow-xl py-2 z-50 animate-fade-in"
+              className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-[#131820] border border-slate-200 dark:border-slate-800 shadow-xl py-2 z-50 animate-modal-enter"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
@@ -250,16 +256,30 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenMobileNav }) => {
                   <Shield size={14} />
                   Sécurité & KYC
                 </button>
-                <button
-                  onClick={() => {
-                    setUserMenuOpen(false);
-                    navigate('/api-keys');
-                  }}
-                  className="w-full px-4 py-2 text-left text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 flex items-center gap-2"
-                >
-                  <Sparkles size={14} />
-                  Accès Développeur
-                </button>
+                {canManageApiKeys(user) && (
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      navigate('/api-keys');
+                    }}
+                    className="w-full px-4 py-2 text-left text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 flex items-center gap-2"
+                  >
+                    <Sparkles size={14} />
+                    Accès Développeur
+                  </button>
+                )}
+                {isAdmin(user) && (
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      navigate('/admin');
+                    }}
+                    className="w-full px-4 py-2 text-left text-xs text-amber-500 hover:bg-amber-500/10 flex items-center gap-2 font-medium"
+                  >
+                    <ShieldAlert size={14} />
+                    Console Admin (Staff)
+                  </button>
+                )}
               </div>
 
               <div className="pt-1 border-t border-slate-100 dark:border-slate-800">

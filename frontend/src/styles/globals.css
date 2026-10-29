@@ -2,64 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── TRUST Motion Design System ─────────────────────────────────────────────
+ * Archetype: Premium + Corporate (FinTech)
+ * Signature easing: --ease-premium (0.4,0,0.2,1)
+ * Duration palette: quick 150ms / standard 300ms / slow 500ms
+ * Entrance pattern: translateY(12px) + opacity 0 → standard
+ * 0% overshoot on financial data, max 5% on success states
+ * ──────────────────────────────────────────────────────────────────────────── */
+
 @layer base {
   :root {
+    /* Colors */
     --background: 210 20% 98%;
     --foreground: 222 47% 11%;
-
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-
-    --primary: 260 100% 62%; /* #7B3DFF */
+    --primary: 260 100% 62%;
     --primary-foreground: 210 40% 98%;
-
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222 47% 11.2%;
-
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 187 100% 50%; /* #00E5FF */
+    --accent: 187 100% 50%;
     --accent-foreground: 222 47% 11.2%;
-
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 260 100% 62%;
-
     --radius: 0.75rem;
+
+    /* Motion tokens — Premium/Corporate FinTech */
+    --ease-premium: cubic-bezier(0.4, 0, 0.2, 1);    /* On-screen transitions */
+    --ease-entrance: cubic-bezier(0.16, 1, 0.3, 1);  /* Entrances: fast start, silk landing */
+    --ease-exit: cubic-bezier(0.3, 0, 1, 1);          /* Exits: gentle start, fast away */
+    --ease-snappy: cubic-bezier(0.2, 0, 0, 1);        /* Snappy actions, decisive */
+    --ease-gentle: cubic-bezier(0.4, 0, 0.2, 1);      /* Ambient, background */
+
+    /* Duration palette (Corporate standard) */
+    --dur-instant: 80ms;   /* Tooltips, micro */
+    --dur-quick: 150ms;    /* Button press, hover */
+    --dur-standard: 300ms; /* Cards, icons, state changes */
+    --dur-modal: 380ms;    /* Modals, panels, sidebars */
+    --dur-page: 450ms;     /* Page transitions, reveals */
+    --dur-ambient: 2800ms; /* Breathing, loops */
   }
 
   .dark {
-    --background: 214 29% 6%; /* #0B0F14 */
-    --foreground: 225 38% 97%; /* #F4F6FC */
-
-    --card: 218 25% 10%; /* #131820 */
+    --background: 214 29% 6%;
+    --foreground: 225 38% 97%;
+    --card: 218 25% 10%;
     --card-foreground: 225 38% 97%;
-
     --popover: 218 25% 10%;
     --popover-foreground: 225 38% 97%;
-
-    --primary: 260 100% 62%; /* #7B3DFF */
+    --primary: 260 100% 62%;
     --primary-foreground: 0 0% 100%;
-
     --secondary: 217 19% 15%;
     --secondary-foreground: 210 40% 98%;
-
     --muted: 217 19% 15%;
     --muted-foreground: 215 20% 65%;
-
-    --accent: 187 100% 50%; /* #00E5FF */
+    --accent: 187 100% 50%;
     --accent-foreground: 214 29% 6%;
-
     --destructive: 0 62.8% 45%;
     --destructive-foreground: 210 40% 98%;
-
     --border: 217 19% 18%;
     --input: 217 19% 18%;
     --ring: 260 100% 62%;
@@ -71,23 +78,258 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-sans antialiased selection:bg-[#7B3DFF]/30 selection:text-white;
+    @apply bg-background text-foreground font-sans antialiased;
+    @apply selection:bg-[#7B3DFF]/30 selection:text-white;
     min-height: 100vh;
   }
 }
 
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* ─── KEYFRAMES ──────────────────────────────────────────────────────────────
+ * Three layers: Primary (main action) · Secondary (supporting) · Ambient (life)
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/* PRIMARY — entrance de base TRUST */
+@keyframes trust-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+/* PRIMARY — scale in pour modales et overlays */
+@keyframes trust-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
+
+/* PRIMARY — slide in depuis la gauche (sidebar) */
+@keyframes trust-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* SECONDARY — nav active indicator slide */
+@keyframes trust-indicator {
+  from {
+    opacity: 0;
+    transform: scaleY(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+/* SECONDARY — shake d'erreur horizontal (3 oscillations) */
+@keyframes trust-shake {
+  0%, 100% { transform: translateX(0); }
+  16%  { transform: translateX(-8px); }
+  33%  { transform: translateX(7px); }
+  50%  { transform: translateX(-6px); }
+  67%  { transform: translateX(5px); }
+  83%  { transform: translateX(-3px); }
+}
+
+/* SECONDARY — checkmark draw success (stroke-dashoffset) */
+@keyframes trust-check-draw {
+  from { stroke-dashoffset: 120; opacity: 0.6; }
+  to   { stroke-dashoffset: 0;   opacity: 1; }
+}
+
+/* SECONDARY — pop léger succès (5% max overshoot, Corporate) */
+@keyframes trust-success-pop {
+  0%   { transform: scale(0.92); opacity: 0; }
+  60%  { transform: scale(1.03); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+/* AMBIENT — pulsation douce pour statuts actifs (BLOCKED escrow) */
+@keyframes trust-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* AMBIENT — gradient shimmer sur skeleton loaders */
+@keyframes trust-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+/* AMBIENT — glow flottant arrière-plan hero */
+@keyframes trust-glow-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(8px, -12px) scale(1.04); }
+  66%       { transform: translate(-6px, 8px) scale(0.97); }
+}
+
+/* AMBIENT — iridescent text shimmer (TRUST brand signature) */
+@keyframes trust-text-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────── */
+
+/* 404 Face animation keyframes (Playful — illustration exception) */
+@keyframes face-eyes {
+  from { transform: translateY(112.5px); }
+  to   { transform: translateY(15px); }
+}
+@keyframes face-eye-lid {
+  0%, 40%, 45%, 100% { transform: translateY(0); }
+  42.5%              { transform: translateY(17.5px); }
+}
+@keyframes face-pupil {
+  0%, 37.5%, 40%, 45%, 87.5%, 100% {
+    stroke-dashoffset: 0;
+    transform: translate(0, 0);
+  }
+  12.5%, 25%, 62.5%, 75% {
+    transform: translate(-35px, 0);
+  }
+  42.5% {
+    stroke-dashoffset: 35;
+    transform: translate(0, 17.5px);
+  }
+}
+@keyframes face-mouth-left {
+  from, 50% { stroke-dashoffset: -102; }
+  to         { stroke-dashoffset: 0; }
+}
+@keyframes face-mouth-right {
+  from, 50% { stroke-dashoffset: 102; }
+  to         { stroke-dashoffset: 0; }
+}
+@keyframes face-nose {
+  from { transform: translate(0, 0); }
+  to   { transform: translate(0, 22.5px); }
+}
+
+/* ─── ANIMATION UTILITY CLASSES ──────────────────────────────────────────────*/
+
+/* Page / view transitions */
+.animate-page-enter {
+  animation: trust-enter var(--dur-page) var(--ease-entrance) forwards;
+}
+
+/* Standard card / content entrances */
+.animate-enter {
+  animation: trust-enter var(--dur-standard) var(--ease-entrance) forwards;
+}
+
+/* Modal / dialog enter */
+.animate-modal-enter {
+  animation: trust-modal-in var(--dur-modal) var(--ease-entrance) forwards;
+}
+
+/* Success state */
+.animate-success {
+  animation: trust-success-pop 380ms var(--ease-entrance) forwards;
+}
+
+/* Error shake */
+.animate-shake {
+  animation: trust-shake 380ms var(--ease-snappy) forwards;
+}
+
+/* Ambient pulse (BLOCKED escrow indicator) */
+.animate-trust-pulse {
+  animation: trust-pulse var(--dur-ambient) ease-in-out infinite;
+}
+
+/* Ambient glow float (landing hero) */
+.animate-glow-float {
+  animation: trust-glow-float 7s ease-in-out infinite;
+}
+
+/* Ambient text shimmer */
+.animate-text-shimmer {
+  background-size: 200% auto;
+  animation: trust-text-shimmer 3s ease-in-out infinite;
+}
+
+/* Legacy alias — fade-in = page-enter */
+.animate-fade-in {
+  animation: trust-enter var(--dur-page) var(--ease-entrance) forwards;
+}
+
+/* Stagger utilities — micro-cascade 40ms (1/3 rule, total < 200ms for 5 items) */
+.stagger-1 { animation-delay: 40ms; }
+.stagger-2 { animation-delay: 80ms; }
+.stagger-3 { animation-delay: 120ms; }
+.stagger-4 { animation-delay: 160ms; }
+.stagger-5 { animation-delay: 200ms; }
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(123, 61, 255, 0.06) 25%,
+    rgba(123, 61, 255, 0.12) 50%,
+    rgba(123, 61, 255, 0.06) 75%
+  );
+  background-size: 800px 100%;
+  animation: trust-shimmer 1.6s ease-in-out infinite;
+}
+
+/* ─── REDUCED MOTION — Accessibility (Quality Rule CRITICAL) ─────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── GLOBAL TRANSITION LAYER — Secondary motion (hover, focus) ───────────── */
+
+/* All interactive elements: Premium transition defaults */
+button, a, [role="button"] {
+  transition: all var(--dur-quick) var(--ease-premium);
+}
+
+/* Card hover — lift effect (scale 1.01 + shadow) per state-feedback.md */
+.card-hover {
+  transition: transform var(--dur-standard) var(--ease-premium),
+              box-shadow var(--dur-standard) var(--ease-premium);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(123, 61, 255, 0.12);
+}
+
+/* Custom scrollbars — AMBIENT layer */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(123, 61, 255, 0.2);
+  background: rgba(123, 61, 255, 0.18);
   border-radius: 9999px;
+  transition: background var(--dur-quick) ease;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(123, 61, 255, 0.4);
-}
+::-webkit-scrollbar-thumb:hover { background: rgba(123, 61, 255, 0.42); }

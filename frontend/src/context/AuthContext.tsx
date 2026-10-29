@@ -1,25 +1,67 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserProfile } from '@/types/escrow';
-import { api } from '@/lib/api';
-import { MOCK_USER } from '@/lib/mock-data';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { UserProfile, UserRole } from '@/types/escrow';
+import { api, ApiError } from '@/lib/api';
+
+function decodeJwt(token: string): any {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return {};
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return {};
+  }
+}
+
+function profileFromToken(token: string, fallback: Partial<UserProfile> = {}): UserProfile {
+  const decoded = decodeJwt(token);
+  return {
+    id: decoded.user_id || fallback.id || 0,
+    username: decoded.username || fallback.username || 'utilisateur',
+    email: decoded.email || fallback.email || '',
+    role: (decoded.role || fallback.role || 'client') as UserRole,
+    is_kyc_approved: decoded.is_kyc_approved ?? fallback.is_kyc_approved ?? false,
+    full_name: decoded.full_name || fallback.full_name,
+    phone: fallback.phone,
+  };
+}
 
 interface AuthContextType {
   user: UserProfile | null;
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  isDemoMode: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (data: { username: string; email: string; password: string; password2: string }) => Promise<void>;
+  register: (data: {
+    username: string;
+    email: string;
+    password: string;
+    password2: string;
+    role?: string;
+  }) => Promise<void>;
   logout: () => void;
-  toggleDemoMode: () => void;
   setUser: (user: UserProfile | null) => void;
+  refreshUser: () => Promise<UserProfile | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function persistUser(profile: UserProfile | null) {
+  if (profile) {
+    localStorage.setItem('trust_user', JSON.stringify(profile));
+  } else {
+    localStorage.removeItem('trust_user');
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(() => {
+  const [user, setUserState] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem('trust_user');
     if (saved) {
       try {
@@ -28,68 +70,117 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return null;
       }
     }
-    // Default to demo user if demo mode is enabled
-    const demo = localStorage.getItem('trust_demo_mode') === 'true';
-    return demo ? MOCK_USER : null;
+    return null;
   });
 
   const [token, setToken] = useState<string | null>(api.getToken());
   const [isLoading, setIsLoading] = useState(true);
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('trust_demo_mode');
-    return saved === null ? true : saved === 'true'; // Default demo mode active on first run for instant evaluation
-  });
+
+  const setUser = useCallback((profile: UserProfile | null) => {
+    setUserState(profile);
+    persistUser(profile);
+  }, []);
+
+  const refreshUser = useCallback(async (): Promise<UserProfile | null> => {
+    try {
+      const profile = await api.getMe();
+      setUser(profile);
+      setToken(api.getToken());
+      return profile;
+    } catch (error) {
+      // Only an actual authentication rejection should end the session.
+      // Network failures and 429/5xx responses are transient.
+      if (error instanceof ApiError && error.status === 401) {
+        throw error;
+      }
+      return null;
+    }
+  }, [setUser]);
 
   useEffect(() => {
     const initAuth = async () => {
       const storedToken = api.getToken();
-      if (storedToken) {
-        setToken(storedToken);
-        const storedUser = localStorage.getItem('trust_user');
-        if (storedUser) {
-          try {
-            setUser(JSON.parse(storedUser));
-          } catch {
-            // fallback
-          }
+      if (!storedToken) {
+        setUser(null);
+        setToken(null);
+        setIsLoading(false);
+        return;
+      }
+
+      setToken(storedToken);
+      const storedUser = localStorage.getItem('trust_user');
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser) as UserProfile;
+          // Display instantly, then refresh from the API for an authoritative role/KYC state.
+          setUserState(parsed);
+        } catch {
+          setUserState(profileFromToken(storedToken));
         }
-      } else if (isDemoMode && !user) {
-        setUser(MOCK_USER);
+      } else {
+        setUser(profileFromToken(storedToken));
+      }
+
+      try {
+        const profile = await refreshUser();
+        if (!profile) {
+          // API temporarily unreachable (429/5xx): keep the cached session.
+          // The token remains usable and a later request will refresh it.
+        }
+      } catch {
+        // Token (and refresh token) are unusable: drop the stale session.
+        api.logout();
+        setUser(null);
+        setToken(null);
       }
       setIsLoading(false);
     };
     initAuth();
-  }, [isDemoMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onAuthExpired = () => {
+      setUserState(null);
+      setToken(null);
+      localStorage.removeItem('trust_user');
+    };
+    window.addEventListener('trust:auth-expired', onAuthExpired);
+    return () => window.removeEventListener('trust:auth-expired', onAuthExpired);
+  }, []);
 
   const login = async (username: string, password: string) => {
     setIsLoading(true);
     try {
       const res = await api.login(username, password);
+      const profile: UserProfile =
+        res.user ||
+        profileFromToken(res.access, {
+          id: res.user_id,
+          username: res.username || username,
+          email: res.email,
+          role: res.role as UserRole,
+        });
+      setUser(profile);
       setToken(res.access);
-      const userProfile: UserProfile = {
-        id: (res as any).user_id || 1,
-        username: (res as any).username || username,
-        email: `${username}@example.com`,
-        role: (res as any).role || 'client',
-        is_kyc_approved: true,
-      };
-      setUser(userProfile);
-      localStorage.setItem('trust_user', JSON.stringify(userProfile));
-      setIsDemoMode(false);
-      api.setDemoMode(false);
-    } catch (err) {
-      // If backend login failed and demo mode is desired
-      throw err;
+      // Keep profile fields (full_name, phone, kyc_status) in sync with the backend.
+      // A transient failure here must not invalidate a successful login.
+      await refreshUser().catch(() => null);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (data: { username: string; email: string; password: string; password2: string }) => {
+  const register = async (data: {
+    username: string;
+    email: string;
+    password: string;
+    password2: string;
+    role?: string;
+  }) => {
     setIsLoading(true);
     try {
-      const res = await api.register(data);
-      // Automatically login afterwards
+      await api.register(data);
       await login(data.username, data.password);
     } finally {
       setIsLoading(false);
@@ -100,18 +191,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     api.logout();
     setToken(null);
     setUser(null);
-    localStorage.removeItem('trust_user');
-  };
-
-  const toggleDemoMode = () => {
-    const nextVal = !isDemoMode;
-    setIsDemoMode(nextVal);
-    api.setDemoMode(nextVal);
-    if (nextVal) {
-      setUser(MOCK_USER);
-    } else if (!token) {
-      setUser(null);
-    }
   };
 
   return (
@@ -119,14 +198,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         token,
-        isAuthenticated: isDemoMode || Boolean(token && user),
+        isAuthenticated: Boolean(token && user),
         isLoading,
-        isDemoMode,
         login,
         register,
         logout,
-        toggleDemoMode,
         setUser,
+        refreshUser,
       }}
     >
       {children}

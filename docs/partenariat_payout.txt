@@ -1,0 +1,821 @@
+================================================================================
+0xSEQ — GUIDE PRATIQUE : CONFIER LE SÉQUESTRE ET LE DÉCAISSEMENT
+                  À UN PRESTATAIRE AGRÉÉ
+================================================================================
+
+Version    : 1.0
+Date       : 29 octobre 2026
+Contexte   : plateforme 0xSeq (paiement sécurisé e-commerce en FCFA / XOF)
+Public     : fondateur solo — document de travail à exécuter plus tard
+Statut     : À FAIRE (aucun partenariat signé à ce jour)
+
+IMPORTANT
+---------
+Ce document est un guide opérationnel, pas un avis juridique.
+Les décisions réglementaires (BCEAO, agrément, conservation des fonds)
+doivent être validées par un avocat ou un cabinet spécialisé UEMOA avant
+signature. Les noms de prestataires cités sont des pistes à vérifier : leur
+statut, leur périmètre et leurs tarifs évoluent.
+
+
+================================================================================
+SOMMAIRE
+================================================================================
+
+ 1. Objectif et principe
+ 2. Ce qui est déjà en place dans 0xSeq
+ 3. Les trois modèles possibles
+ 4. Qui peut être qualifié de "prestataire agréé"
+ 5. Vérifications obligatoires avant toute discussion
+ 6. Dossier à préparer
+ 7. Questions à poser au prestataire
+ 8. Clauses contractuelles à négocier
+ 9. Flux technique cible
+10. Modifications à prévoir dans 0xSeq
+11. Plan d'action solo (semaine par semaine)
+12. En attendant : mode manuel renforcé
+13. Modèle d'e-mail de prise de contact
+14. Fiche de comparaison des prestataires
+15. Points de vigilance juridique
+16. Lexique
+17. À vérifier / sources
+18. PSP, P2P et non-détention des fonds
+
+
+================================================================================
+1. OBJECTIF ET PRINCIPE
+================================================================================
+
+Aujourd'hui, 0xSeq libère les fonds vers un portefeuille interne, puis le
+vendeur demande un retrait Wave / Orange Money / MTN MoMo. Le virement
+externe est confirmé manuellement par un administrateur.
+
+Objectif du partenariat :
+
+  - l'argent des acheteurs ne transite plus par 0xSeq ;
+  - il est collecté et conservé par un prestataire agréé ;
+  - 0xSeq donne l'instruction de payer le vendeur après livraison ;
+  - le prestataire exécute le décaissement et confirme par webhook.
+
+Principe directeur :
+
+  "0xSeq ne détient jamais les fonds. 0xSeq orchestre la commande,
+   le prestataire agréé détient et déplace l'argent."
+
+Cette séparation est ce qui rend le montage défendable.
+
+
+================================================================================
+2. CE QUI EST DÉJÀ EN PLACE DANS 0xSEQ
+================================================================================
+
+Déjà implémenté et testé :
+
+  [x] Checkout GeniusPay (POST /payments) et remboursement.
+  [x] Webhooks payment.success / payment.refunded.
+  [x] Machine à états : CREATED -> BLOCKED -> RELEASED / REFUNDED / DISPUTED.
+  [x] Libération vers le portefeuille interne du vendeur.
+  [x] Auto-release des séquestres expirés vers ce portefeuille.
+  [x] Demande de retrait Wave / Orange Money / MTN MoMo (statut PENDING).
+  [x] Confirmation ou rejet du retrait par un administrateur.
+  [x] Réconciliation de secours via GET /payments/{reference}.
+  [x] Suite de tests backend (103 tests).
+
+Ce qui manque :
+
+  [ ] Un dépositaire agréé qui conserve réellement les fonds.
+  [ ] Un décaissement automatique vers Wave / Orange / MTN.
+  [ ] La réconciliation automatique des payouts.
+  [ ] Le cadre contractuel et conformité (KYC vendeurs, AML, etc.).
+
+
+================================================================================
+3. LES TROIS MODÈLES POSSIBLES
+================================================================================
+
+MODÈLE A — Compte marchand EME / PSP  (le plus simple)
+-------------------------------------------------------
+Qui détient les fonds : l'émetteur de monnaie électronique ou le PSP.
+Fonctionnement :
+  - les acheteurs paient sur le compte marchand du prestataire ;
+  - 0xSeq suit la commande dans sa base ;
+  - après livraison, 0xSeq demande un payout vers le vendeur ;
+  - le prestataire paie et renvoie un webhook.
+
+Avantages  : rapide, peu de conformité directe, une seule intégration.
+Inconvénients : le prestataire est seul dépositaire ; vérifier la séparation
+                des fonds et la protection en cas de faillite.
+
+MODÈLE B — Marketplace / sous-marchands
+----------------------------------------
+Qui détient les fonds : le PSP, avec un compte ou un identifiant par vendeur.
+Fonctionnement :
+  - chaque vendeur est onboardé et vérifié (KYC) chez le PSP ;
+  - la collecte est rattachée au vendeur ;
+  - 0xSeq déclenche le payout depuis la plateforme.
+
+Avantages  : plus propre pour une marketplace ; traçabilité par vendeur.
+Inconvénients : onboarding plus lourd ; le PSP doit supported le "split"
+                ou les "sub-merchants".
+
+MODÈLE C — Compte séquestre bancaire + PSP technique
+-----------------------------------------------------
+Qui détient les fonds : une banque, sur un compte de cantonnement/séquestre.
+Fonctionnement :
+  - la banque ouvre un compte dédié aux fonds clients ;
+  - le PSP exécute les collectes et les décaissements ;
+  - 0xSeq instruit les mouvements.
+
+Avantages  : protection et lisibilité maximales.
+Inconvénients : coût, délais, montage contractuel lourd. Rarement adapté à
+                un lancement solo.
+
+RECOMMANDATION POUR UN FONDATEUR SOLO
+--------------------------------------
+Commencer par le MODÈLE A avec un agrégateur qui couvre Wave + Orange + MTN,
+et vérifier contractuellement la séparation des fonds. Passer au modèle B
+ensuite si le volume de vendeurs le justifie.
+
+
+================================================================================
+4. QUI PEUT ÊTRE QUALIFIÉ DE "PRESTATAIRE AGRÉÉ"
+================================================================================
+
+Trois familles à distinguer :
+
+A. ÉMETTEURS DE MONNAIE ÉLECTRONIQUE (EME) / OPÉRATEURS
+   Exemples de marché : Wave, Orange Money, MTN MoMo, Moov Money.
+   Ce sont eux qui peuvent détenir de la monnaie électronique.
+   À vérifier : agrément BCEAO, pays couverts, offre marchand/marketplace.
+
+B. ÉTABLISSEMENTS DE PAIEMENT / AGRÉGATEURS
+   Exemples : CinetPay, PayDunya, Hub2, Kkiapay, FedaPay.
+   Ils agrègent plusieurs opérateurs.
+   ATTENTION : un agrégateur n'est pas forcément le dépositaire des fonds.
+   Demander explicitement : "qui détient l'argent et sous quel agrément ?"
+
+C. BANQUES
+   Nécessaires pour un vrai compte de cantonnement / séquestre.
+
+RÈGLE DE BASE
+-------------
+Ne jamais se contenter de la page marketing. Demander :
+  - le numéro d'agrément ;
+  - le périmètre autorisé ;
+  - la confirmation écrite du dépositaire ;
+  - la liste officielle BCEAO correspondante.
+
+
+================================================================================
+5. VÉRIFICATIONS OBLIGATOIRES AVANT TOUTE DISCUSSION
+================================================================================
+
+[ ] Le prestataire figure-t-il sur la liste officielle BCEAO des EME /
+    établissements de paiement agréés ?
+[ ] Quel est son numéro d'agrément et sa date de validité ?
+[ ] Quels pays couvre-t-il réellement (CI, SN, ML, BF, etc.) ?
+[ ] Détient-il lui-même les fonds ou les route-t-il vers un opérateur ?
+[ ] Les fonds clients sont-ils séparés de ses fonds propres ?
+[ ] Que se passe-t-il en cas de faillite, suspension ou retrait d'agrément ?
+[ ] Propose-t-il une API de payout (décaissement) documentée ?
+[ ] Propose-t-il des comptes sous-marchands / du split payment ?
+[ ] Fournit-il des webhooks signés et une API de réconciliation ?
+[ ] Existe-t-il une sandbox accessible sans contrat définitif ?
+[ ] Quels sont les délais de règlement et les cut-off ?
+[ ] Quels sont les plafonds par transaction / par jour / par mois ?
+[ ] Quels documents KYC/KYB demande-t-il ?
+[ ] Quelle est la grille tarifaire (collecte, payout, abonnement) ?
+
+PREUVE À CONSERVER
+------------------
+Garder une copie datée :
+  - de la page d'agrément BCEAO ;
+  - du contrat ;
+  - des conditions tarifaires ;
+  - des échanges sur le dépositaire des fonds.
+
+
+================================================================================
+6. DOSSIER À PRÉPARER
+================================================================================
+
+SOCIÉTÉ
+  [ ] RCCM / registre du commerce
+  [ ] DFE / numéro fiscal
+  [ ] Statuts
+  [ ] Liste des dirigeants et bénéficiaires effectifs
+  [ ] Pièces d'identité des dirigeants
+  [ ] Justificatif de domicile professionnel
+  [ ] Compte bancaire de règlement (RIB)
+
+ACTIVITÉ
+  [ ] Description claire du modèle : marketplace + séquestre + payout
+  [ ] Parcours acheteur et parcours vendeur
+  [ ] Volumes estimés (mensuel, panier moyen, nombre de vendeurs)
+  [ ] Pays d'opération
+  [ ] Types de produits vendus (risque/fraude)
+  [ ] Conditions générales du service
+  [ ] Politique de remboursement et de litige
+
+CONFORMITÉ
+  [ ] Politique KYC vendeurs
+  [ ] Politique AML / lutte anti-fraude
+  [ ] Procédure de gel de compte
+  [ ] Politique de protection des données
+  [ ] Registre des traitements (si applicable)
+  [ ] Processus de gestion des réclamations
+
+TECHNIQUE
+  [ ] URL du site et de l'API
+  [ ] Environnement de test
+  [ ] Contact technique
+  [ ] Description des webhooks attendus
+
+
+================================================================================
+7. QUESTIONS À POSER AU PRESTATAIRE
+================================================================================
+
+AGRÉMENT ET DÉPÔT
+  Q1.  Quel est votre numéro d'agrément BCEAO et son périmètre exact ?
+  Q2.  Qui est juridiquement dépositaire des fonds des acheteurs ?
+  Q3.  Les fonds clients sont-ils cantonnés/séparés de vos fonds propres ?
+  Q4.  Que se passe-t-il si vous êtes suspendu ou en faillite ?
+  Q5.  Pouvez-vous fournir une attestation écrite de ces points ?
+
+COLLECTE
+  Q6.  Quelles API de collecte proposez-vous (checkout, paiement direct) ?
+  Q7.  Quels moyens : Wave, Orange Money, MTN MoMo, carte, banque ?
+  Q8.  Quels webhooks pour confirmer un encaissement ?
+  Q9.  Comment gérez-vous les doublons et les rejeux (idempotence) ?
+  Q10. Quels délais de confirmation et de règlement ?
+
+DÉCAISSEMENT
+  Q11. Disposez-vous d'une API de payout/décaissement documentée ?
+  Q12. Couvre-t-elle Wave, Orange Money et MTN depuis une seule API ?
+  Q13. Quels webhooks pour payout.completed / payout.failed ?
+  Q14. Quels statuts retournés (pending, processing, completed, failed) ?
+  Q15. Quels cut-off et délais de réception ?
+  Q16. Quels plafonds par payout et par jour ?
+  Q17. Comment sont gérés les échecs, reprises et remboursements ?
+  Q18. Peut-on payer un bénéficiaire qui n'est pas encore client chez vous ?
+
+MARKETPLACE
+  Q19. Proposez-vous des comptes sous-marchands ou du split payment ?
+  Q20. Qui réalise le KYC des vendeurs : vous ou nous ?
+  Q21. Peut-on rattacher chaque collecte à un vendeur identifié ?
+  Q22. Peut-on bloquer les fonds d'un vendeur en cas de litige ?
+  Q23. Peut-on reverser la commission plateforme automatiquement ?
+
+TECHNIQUE
+  Q24. Avez-vous une sandbox et des clés de test ?
+  Q25. Quelle est la documentation OpenAPI/Swagger ?
+  Q26. Quels langages/SDK sont supportés ?
+  Q27. Comment sont signés les webhooks et gérés les rejeux ?
+  Q28. Existe-t-il une API de solde et de réconciliation ?
+  Q29. Fournissez-vous un export quotidien des mouvements ?
+  Q30. Quels sont vos SLA de disponibilité et de support ?
+
+COMMERCIAL
+  Q31. Quelle est la grille tarifaire complète ?
+  Q32. Y a-t-il des frais d'installation ou un abonnement ?
+  Q33. Quels sont les délais d'onboarding ?
+  Q34. Quelles garanties ou pénalités en cas de retard de payout ?
+  Q35. Quelles sont les conditions de résiliation et de sortie des fonds ?
+
+
+================================================================================
+8. CLAUSES CONTRACTUELLES À NÉGOCIER
+================================================================================
+
+DÉPÔT ET SÉCURITÉ
+  [ ] Identification du dépositaire légal des fonds.
+  [ ] Séparation / cantonnement des fonds clients.
+  [ ] Interdiction d'utiliser les fonds clients pour ses propres besoins.
+  [ ] Sort des fonds en cas d'insolvabilité ou de retrait d'agrément.
+  [ ] Droit d'audit et de contrôle.
+
+EXÉCUTION
+  [ ] SLA de décaissement (délai maximum).
+  [ ] Cut-off et jours ouvrés.
+  [ ] Gestion des échecs et des reprises.
+  [ ] Plafonds et limites.
+  [ ] Responsabilité en cas de retard ou d'erreur de paiement.
+  [ ] Pénalités éventuelles.
+
+ARGENT
+  [ ] Grille tarifaire (collecte, payout, abonnement, frais fixes).
+  [ ] Devise et conversion.
+  [ ] Remboursements, annulations, chargebacks.
+  [ ] Gestion des trop-perçus et des manques.
+  [ ] Modalités de règlement de la commission plateforme.
+
+CONFORMITÉ
+  [ ] Répartition des obligations KYC / AML / CFT.
+  [ ] Vérification des vendeurs et des bénéficiaires.
+  [ ] Gel de compte et signalement.
+  [ ] Sanctions et listes de vigilance.
+  [ ] Protection des données personnelles.
+  [ ] Confidentialité.
+
+TECHNIQUE
+  [ ] Webhooks signés et tolérance aux rejeux.
+  [ ] Idempotence des payout.
+  [ ] API de réconciliation et exports.
+  [ ] Disponibilité et maintenance.
+  [ ] Réversibilité et export des données.
+
+FIN
+  [ ] Durée, préavis, résiliation.
+  [ ] Sortie des fonds et continuité de service.
+  [ ] Droit applicable et juridiction.
+  [ ] Plafond de responsabilité.
+
+
+================================================================================
+9. FLUX TECHNIQUE CIBLE
+================================================================================
+
+   Acheteur
+      |
+      | 1. Checkout
+      v
+   Prestataire agréé  <---------- 0xSeq (création de la commande)
+      |                              |
+      | 2. Fonds encaissés           | 3. Webhook "fonds reçus"
+      |    et conservés              |    -> Paiement BLOCKED
+      |                              |
+      |                              | 4. Livraison confirmée
+      |                              |    -> instruction de payout
+      | 5. Payout vers le vendeur    |
+      |    Wave / Orange / MTN       |
+      |                              |
+      | 6. Webhook payout.completed  |
+      |    ou payout.failed          |
+      v                              v
+   Vendeur                      0xSeq met à jour le statut
+                                et la réconciliation
+
+POINTS CLÉS
+  - 0xSeq ne stocke jamais l'argent.
+  - Le solde "wallet" interne devient un miroir des fonds chez le prestataire
+    ou disparaît au profit d'un solde prestataire.
+  - Toute instruction de payout doit être idempotente.
+  - Chaque payout doit avoir une référence interne unique.
+
+
+================================================================================
+10. MODIFICATIONS À PRÉVOIR DANS 0xSEQ
+================================================================================
+
+PHASE 1 — MODÈLE ET ABSTRACTION (sans dépendre d'un contrat)
+  [ ] Créer un modèle Payout :
+        - paiement lié
+        - vendeur
+        - montant
+        - devise
+        - opérateur (WAVE / ORANGE_MONEY / MTN_MOMO)
+        - téléphone bénéficiaire
+        - statut (PENDING / PROCESSING / COMPLETED / FAILED)
+        - référence interne unique
+        - référence fournisseur
+        - idempotency_key
+        - motif d'échec
+        - dates
+  [ ] Créer une interface PayoutProvider :
+        - initiate_payout(payout)
+        - verify_payout(reference)
+        - handle_webhook(payload)
+  [ ] Créer un ManualProvider (comportement actuel : confirmation admin).
+  [ ] Ajouter un feature flag PAYOUT_PROVIDER=manual|cinetpay|wave|...
+  [ ] Tests : idempotence, double payout interdit, échec, rejeu webhook.
+
+PHASE 2 — ADAPTATEUR DU PRESTATAIRE CHOISI
+  [ ] Implémenter l'adaptateur réel.
+  [ ] Gérer l'authentification et les erreurs réseau.
+  [ ] Traiter les webhooks payout.* avec vérification de signature.
+  [ ] Ajouter la réconciliation périodique (tâche Celery).
+  [ ] Journaliser chaque appel et chaque réponse.
+  [ ] Ne jamais exposer les clés côté client.
+
+PHASE 3 — COMPTES VENDEURS
+  [ ] Stocker l'identifiant vendeur chez le prestataire.
+  [ ] Onboarding/KYC vendeur avant premier payout.
+  [ ] Bloquer le payout si KYC incomplet.
+  [ ] Gérer les litiges : suspension du payout.
+
+PHASE 4 — MISE EN PRODUCTION
+  [ ] Tests en sandbox avec petits montants.
+  [ ] Phase pilote avec quelques vendeurs.
+  [ ] Réconciliation quotidienne obligatoire.
+  [ ] Alertes sur payout FAILED ou PROCESSING trop long.
+  [ ] Procédure de secours manuelle documentée.
+
+
+================================================================================
+11. PLAN D'ACTION SOLO (SEMAINE PAR SEMAINE)
+================================================================================
+
+Vous êtes seul : l'objectif est de réduire le nombre d'intégrations et de
+négociations. Un seul agrégateur multi-opérateurs vaut mieux que trois
+intégrations Wave + Orange + MTN séparées.
+
+SEMAINE 1 — CADRAGE
+  [ ] Relire ce document.
+  [ ] Consulter la liste officielle BCEAO des EME / établissements agréés.
+  [ ] Présélectionner 4 à 6 prestataires.
+  [ ] Envoyer l'e-mail type (section 13) à chacun.
+  [ ] Ouvrir un tableau de suivi (section 14).
+
+SEMAINE 2 — ENTRETIENS
+  [ ] Recevoir les réponses écrites.
+  [ ] Vérifier les agréments.
+  [ ] Poser les questions techniques (section 7).
+  [ ] Demander la documentation API et l'accès sandbox.
+  [ ] Éliminer ceux qui ne peuvent pas prouver le dépositaire des fonds.
+
+SEMAINE 3 — SÉLECTION
+  [ ] Comparer sur : agrément, couverture, payout API, tarifs, délais.
+  [ ] Choisir un prestataire principal et un plan B.
+  [ ] Constituer le dossier KYB (section 6).
+  [ ] Demander le contrat et les conditions tarifaires.
+
+SEMAINES 4 À 6 — CONTRAT ET SANDBOX
+  [ ] Faire relire le contrat par un juriste.
+  [ ] Négocier les clauses de la section 8.
+  [ ] Obtenir les clés sandbox.
+  [ ] Tester collecte + payout + webhooks.
+
+SEMAINES 7 À 10 — INTÉGRATION
+  [ ] Implémenter Payout + PayoutProvider (phase 1).
+  [ ] Implémenter l'adaptateur (phase 2).
+  [ ] Ajouter la réconciliation et les alertes.
+  [ ] Tests complets et revue de sécurité.
+
+SEMAINE 11+ — PILOTE
+  [ ] Petits montants, peu de vendeurs.
+  [ ] Vérifier chaque payout manuellement.
+  [ ] Augmenter progressivement les plafonds.
+  [ ] Documenter les incidents.
+
+SI LE PARTENARIAT PREND DU RETARD
+  [ ] Rester en mode manuel renforcé (section 12).
+  [ ] Ne pas promettre un décaissement automatique aux vendeurs.
+  [ ] Continuer à améliorer la traçabilité et les preuves de virement.
+
+
+================================================================================
+12. EN ATTENDANT : MODE MANUEL RENFORCÉ
+================================================================================
+
+Le circuit actuel est déjà fonctionnel. Pour limiter les risques :
+
+  [ ] KYC vendeur obligatoire avant tout retrait.
+  [ ] Plafond de retrait par jour et par vendeur.
+  [ ] Double validation : un admin prépare, un second confirme.
+      (Si vous êtes seul, imposer au moins un délai de réflexion et une
+       vérification téléphonique du bénéficiaire.)
+  [ ] Référence de transfert obligatoire avant de marquer COMPLETED.
+  [ ] Preuve de virement archivée (capture, reçu opérateur).
+  [ ] Vérification du numéro bénéficiaire (nom + téléphone).
+  [ ] Journal d'audit : qui a validé, quand, quel montant.
+  [ ] Réconciliation quotidienne entre les soldes internes et les comptes
+      Mobile Money.
+  [ ] Alerte si un vendeur demande un retrait juste après une libération.
+  [ ] Ne jamais marquer COMPLETED sans transfert réel effectué.
+
+RAPPEL
+------
+Le solde du portefeuille interne est une dette de la plateforme envers le
+vendeur. Il doit toujours être couvert par des fonds réellement encaissés.
+
+
+================================================================================
+13. MODÈLE D'E-MAIL DE PRISE DE CONTACT
+================================================================================
+
+Objet : Demande de partenariat — collecte et décaissement marketplace
+
+Bonjour,
+
+Nous éditons 0xSeq, une plateforme de paiement sécurisé pour l'e-commerce
+en FCFA (XOF). Les acheteurs paient, les fonds sont conservés jusqu'à
+validation de la livraison, puis reversés au vendeur.
+
+Nous recherchons un partenaire agréé pour :
+
+  - collecter les paiements des acheteurs (Wave, Orange Money, MTN MoMo) ;
+  - conserver les fonds jusqu'à validation de la livraison ;
+  - décaisser vers le vendeur sur son compte Mobile Money ;
+  - gérer des comptes sous-marchands ou un rattachement par vendeur ;
+  - fournir des webhooks et une API de réconciliation.
+
+Pouvez-vous nous confirmer :
+
+  1. votre numéro d'agrément BCEAO et son périmètre ;
+  2. qui est juridiquement dépositaire des fonds ;
+  3. si les fonds clients sont séparés de vos fonds propres ;
+  4. si vous proposez une API de payout documentée et une sandbox ;
+  5. si vous supportez les comptes sous-marchands / le split payment ;
+  6. vos tarifs, plafonds, délais de règlement et d'onboarding ;
+  7. les documents KYC/KYB à fournir.
+
+Nous pouvons fournir notre dossier société et nos volumes prévisionnels
+dès que nécessaire.
+
+Cordialement,
+[Votre nom]
+[Fonction]
+0xSeq
+[E-mail] — [Téléphone]
+[Site web]
+
+
+================================================================================
+14. FICHE DE COMPARAISON DES PRESTATAIRES
+================================================================================
+
+Copier/coller ce bloc pour chaque prestataire.
+
+  NOM DU PRESTATAIRE :
+  CONTACT :
+  DATE DE CONTACT :
+  SITE :
+
+  AGRÉMENT
+    Numéro BCEAO :
+    Pays couverts :
+    Dépositaire des fonds :
+    Fonds séparés (oui/non/preuve) :
+    Sort en cas de faillite :
+
+  PRODUIT
+    Collecte (oui/non) :
+    Payout (oui/non) :
+    Opérateurs couverts :
+    Sous-marchands / split :
+    KYC vendeur (qui ?) :
+    Webhooks signés :
+    API réconciliation :
+    Sandbox :
+
+  TECHNIQUE
+    Documentation :
+    Délai d'intégration :
+    Idempotence :
+    Plafonds :
+    SLA :
+
+  COMMERCIAL
+    Frais de collecte :
+    Frais de payout :
+    Abonnement :
+    Délai d'onboarding :
+    Durée d'engagement :
+
+  AVIS
+    Points forts :
+    Points faibles :
+    Risques :
+    Décision :
+
+
+================================================================================
+15. POINTS DE VIGILANCE JURIDIQUE
+================================================================================
+
+  - Ne pas se présenter comme "séquestre agréé" ou "établissement de paiement"
+    sans agrément.
+  - Utiliser une formulation honnête : "paiement sécurisé avec libération
+    après livraison", "fonds conservés par un partenaire agréé".
+  - Vérifier qui, juridiquement, détient les fonds.
+  - Vérifier la séparation des fonds clients.
+  - Vérifier les obligations KYC/AML et qui les porte.
+  - Vérifier la protection des données personnelles.
+  - Faire relire le contrat par un avocat spécialisé UEMOA/BCEAO.
+  - Conserver toutes les preuves d'agrément et les échanges écrits.
+  - Ne pas promettre aux vendeurs un décaissement instantané avant que le
+    prestataire ne le garantisse contractuellement.
+
+
+================================================================================
+16. LEXIQUE
+================================================================================
+
+BCEAO      Banque Centrale des États de l'Afrique de l'Ouest.
+EME        Émetteur de Monnaie Électronique (peut détenir de la monnaie
+           électronique).
+PSP        Prestataire de services de paiement.
+EP         Établissement de paiement.
+KYC        Know Your Customer — vérification de l'identité.
+KYB        Know Your Business — vérification de l'entreprise.
+AML/CFT    Anti-Money Laundering / Combating the Financing of Terrorism.
+Payout     Décaissement vers un bénéficiaire (vendeur).
+Disbursement  Synonyme de payout.
+Split payment  Répartition automatique d'un paiement entre plusieurs acteurs.
+Cantonnement  Séparation des fonds clients des fonds propres.
+Cut-off    Heure limite de prise en charge d'un virement pour le jour ouvré.
+SLA        Engagement de niveau de service.
+Idempotence  Propriété qui empêche qu'une même instruction soit exécutée
+             deux fois.
+XOF        Franc CFA UEMOA.
+
+
+================================================================================
+17. À VÉRIFIER / SOURCES
+================================================================================
+
+À CONSULTER AU MOMENT DE L'EXÉCUTION (les listes évoluent) :
+
+  [ ] Site officiel BCEAO — liste des EME et établissements de paiement
+      agréés, et périmètre par pays.
+  [ ] Documentation Wave Business / Payout.
+  [ ] Documentation CinetPay (collecte, transfert, payout de masse).
+  [ ] Portail MTN MoMo Developer (produit Disbursement, sandbox).
+  [ ] Documentation Orange Developer / Orange Money.
+  [ ] Conditions générales et tarifs de chaque prestataire.
+  [ ] Cabinet juridique spécialisé UEMOA pour la revue du contrat.
+
+NOTE
+----
+Les prestataires cités dans ce document sont des exemples de marché, pas des
+recommandations. Leur agrément, leur couverture et leurs tarifs doivent être
+vérifiés directement à la date du projet.
+
+
+================================================================================
+18. PSP, P2P ET NON-DÉTENTION DES FONDS
+================================================================================
+
+18.1 QU'EST-CE QU'UN PSP ?
+--------------------------
+PSP = Prestataire de Services de Paiement.
+
+C'est une entreprise autorisée à fournir des services de paiement :
+encaisser, transférer, ouvrir des comptes de paiement, exécuter des
+décaissements. C'est un statut réglementaire défini par la BCEAO.
+
+  PSP      = statut légal : autorisé à faire transiter des paiements.
+  EME      = sous-catégorie de PSP : peut émettre et détenir de la monnaie
+             électronique (Wave, Orange Money, MTN MoMo...).
+  Agrégateur = rôle technique/commercial : connecte plusieurs opérateurs via
+             une API (CinetPay, PayDunya...). Pas forcément PSP lui-même.
+  Banque   = peut porter un compte de cantonnement/séquestre.
+
+Attention : beaucoup de fintechs se disent "PSP" commercialement sans avoir
+l'agrément. Vérifier par un numéro d'agrément BCEAO et un périmètre précis.
+
+18.2 SUIS-JE OBLIGÉ D'AVOIR UN PSP ?
+------------------------------------
+La question centrale n'est pas "suis-je P2P ?" mais :
+
+  "Est-ce que l'argent des acheteurs passe un jour sur un compte que je
+   contrôle ?"
+
+  Cas A. L'argent va directement chez le vendeur (son compte Wave/OM/MTN).
+         -> 0xSeq ne détient rien : pas besoin d'être PSP.
+
+  Cas B. L'argent va chez un PSP agréé, sur un compte sous-marchand du
+         vendeur ; le PSP paie le vendeur sur instruction.
+         -> 0xSeq ne détient rien : pas besoin d'être PSP.
+
+  Cas C. L'argent est encaissé sur le compte marchand de 0xSeq, conservé
+         par 0xSeq, puis reversé plus tard.
+         -> 0xSeq détient des fonds pour compte de tiers : agrément EME/PSP
+            ou partenaire agréé nécessaire.
+
+SITUATION ACTUELLE DE 0xSEQ
+---------------------------
+Les paiements arrivent sur le compte marchand GeniusPay de 0xSeq, puis sont
+crédités dans un wallet interne. 0xSeq est donc dans le cas C, même si
+GeniusPay est un fournisseur technique agréé.
+
+Conséquence : le mot "séquestre" est juridiquement fragile tant que 0xSeq
+contrôle les fonds. Il faut soit un partenaire qui les détient, soit changer
+le flux.
+
+18.3 MON CODE ACTUEL EST-IL P2P ?
+---------------------------------
+NON. Le code actuel est un marketplace avec séquestre et portefeuille
+interne, pas un P2P.
+
+  initiate_payment()  -> l'argent arrive sur le compte marchand 0xSeq
+  Paiement            -> commande encadrée par la plateforme
+  release_funds()     -> crédite une dette interne (wallet vendeur)
+  WalletTransaction   -> la plateforme doit l'argent au vendeur
+  retrait admin       -> la plateforme exécute le décaissement
+
+Un vrai P2P serait :
+
+  Acheteur -> paiement direct -> Vendeur
+  0xSeq ne touche jamais l'argent (matching, lien, suivi, commission).
+
+"P2P" n'est pas un statut juridique protecteur. Ce qui compte, c'est qui
+contrôle l'argent. Un P2P qui conserve ou contrôle les fonds peut être
+requalifié en service de paiement.
+
+18.4 COMMENT NE PAS DÉTENIR LES FONDS (MODÈLE RECOMMANDÉ)
+---------------------------------------------------------
+Objectif : 0xSeq ne reçoit jamais l'argent.
+
+Conditions à remplir :
+  [ ] Aucun compte bancaire 0xSeq ne reçoit les paiements acheteurs.
+  [ ] Aucun compte marchand 0xSeq (GeniusPay ou autre) ne les reçoit.
+  [ ] Aucun wallet interne ne représente une dette de 0xSeq envers le vendeur.
+
+Modèle B — compte sous-marchand PSP :
+
+  Acheteur -> PSP -> compte sous-marchand du vendeur (chez le PSP)
+                          |
+                   0xSeq suit la commande
+                          |
+                   livraison confirmée
+                          |
+           0xSeq -> PSP : libère / paie le vendeur
+                          |
+                   PSP -> Wave / OM / MTN
+
+Étapes :
+  1. Choisir un PSP avec comptes sous-marchands, split payment ou delayed
+     capture, API de payout et webhooks signés.
+  2. Onboarder chaque vendeur chez le PSP (KYC fait par le PSP).
+     Stocker son identifiant : provider_account_id.
+  3. Créer le checkout sur le compte du vendeur, avec les métadonnées de
+     commande. L'argent ne passe pas par 0xSeq.
+  4. À la livraison, appeler l'API de capture/payout du PSP. La commission
+     0xSeq est prélevée par split ou facturée séparément.
+  5. Réconcilier via webhooks payout.completed / payout.failed et un contrôle
+     quotidien solde PSP vs commandes locales.
+
+18.5 MODÈLE A — PAIEMENT DIRECT AU VENDEUR (FALLBACK)
+-----------------------------------------------------
+L'acheteur paie directement le vendeur (son propre compte marchand ou
+wallet). 0xSeq ne fait que générer le lien, suivre la commande et confirmer
+la livraison.
+
+Avantage  : simplicité, aucune détention.
+Inconvénient : plus de séquestre réel ; le vendeur est payé avant livraison.
+Mitigations possibles : vendeurs vérifiés, plafonds, paiement à la livraison,
+garantie vendeur, assurance, historique de confiance.
+
+18.6 CE QU'IL FAUT CHANGER DANS LE CODE
+---------------------------------------
+  [ ] Ajouter provider_account_id sur le vendeur (compte PSP).
+  [ ] Créer un modèle Payout (statuts, référence, idempotency_key).
+  [ ] Créer une interface PayoutProvider + adaptateur PSP.
+  [ ] Remplacer le crédit wallet par un appel payout au PSP.
+  [ ] Garder un mode manual en secours (feature flag).
+  [ ] Le wallet devient un miroir du solde PSP, ou disparaît.
+  [ ] Ajouter la réconciliation PSP et les alertes.
+  [ ] Mettre à jour les CGU.
+
+Tableau avant / après :
+
+  Aujourd'hui                         Demain (sans détention)
+  ----------------------------------  --------------------------------------
+  Compte marchand 0xSeq               Comptes sous-marchands vendeurs
+  escrow_credits = dette interne      Solde miroir du PSP
+  release_funds() crédite le wallet   release_funds() appelle le PSP
+  Wallet = engagement de 0xSeq        Wallet = affichage solde PSP (ou rien)
+  Retrait validé par admin            Payout exécuté par le PSP
+
+18.7 FORMULATIONS CGU
+---------------------
+Honnête (si modèle B) :
+  "Les paiements sont collectés et conservés par [PSP], établissement agréé.
+   0xSeq fournit le service de coordination de la commande et de la livraison
+   et n'agit pas comme dépositaire des fonds."
+
+À éviter tant que ce n'est pas vrai :
+  "Vos fonds sont séquestrés et garantis par 0xSeq."
+  "0xSeq est un séquestre agréé."
+
+18.8 DÉCISION RECOMMANDÉE POUR UN FONDATEUR SOLO
+------------------------------------------------
+  1. Ne pas demander un agrément EME/PSP maintenant.
+  2. Choisir un PSP/EME avec comptes sous-marchands et payout.
+  3. Faire vérifier le montage par un avocat UEMOA avant communication.
+  4. En attendant : mode manuel, plafonds, KYC vendeurs, preuves de virement.
+  5. Ne pas encaisser de nouvelles ventes de tiers sur le compte marchand
+     0xSeq si le modèle cible est la non-détention.
+
+18.9 PREMIÈRE ACTION CETTE SEMAINE
+---------------------------------
+  [ ] Demander à GeniusPay : sous-marchands ? split payment ? delayed
+      capture ? API payout ?
+  [ ] Si non : évaluer CinetPay / Wave Payout / MTN MoMo Disbursement.
+  [ ] Décider : rester custodial avec partenaire, ou passer en sous-marchand.
+  [ ] Mettre à jour le discours commercial en conséquence.
+
+
+================================================================================
+FIN DU DOCUMENT
+================================================================================
+
+Prochaine action concrète :
+  1. Ouvrir la liste BCEAO des EME/PSP agréés.
+  2. Choisir 4 à 6 prestataires.
+  3. Envoyer l'e-mail de la section 13.
+  4. Remplir une fiche de comparaison par prestataire.
+  5. Décider du modèle : détenir les fonds (partenaire obligatoire) ou ne pas
+     les détenir (sous-marchand PSP / paiement direct vendeur). Voir section 18.

@@ -26,6 +26,8 @@ class User(AbstractUser):
         choices=ROLE_USERS,
         default="member",
     )
+    full_name = models.CharField(max_length=255, blank=True, default="")
+    phone     = models.CharField(max_length=32, blank=True, default="")
 
     def is_kyc_approved(self) -> bool:
         """Indique si l'utilisateur a un profil KYC validé."""
@@ -121,6 +123,7 @@ class Paiement(models.Model):
     item_title       = models.CharField(max_length=180, blank=True, default="", help_text="Instantané immuable du produit/service.")
     item_description = models.TextField(blank=True, default="", help_text="Instantané immuable de la description.")
     initiator_role   = models.CharField(max_length=10, choices=INITIATOR_ROLES, default="buyer", help_text="Qui a initié la transaction.")
+    delivery_terms   = models.TextField(blank=True, default="", help_text="Conditions de livraison convenues (instantané).")
     delivery_otp     = models.CharField(max_length=6, blank=True, default="", help_text="Code OTP secret à 6 chiffres pour valider la livraison.")
 
     buyer            = models.ForeignKey(User, on_delete=models.PROTECT, related_name="purchase")
@@ -135,8 +138,27 @@ class Paiement(models.Model):
     escrow_id        = models.CharField(max_length=255, blank=True)
     status           = models.CharField(max_length=10, choices=STATUS, default="CREATED")
     auto_release_at  = models.DateTimeField(null=True, blank=True, help_text="Date limite de libération automatique (3 jours après BLOCKED).")
+    blocked_at       = models.DateTimeField(null=True, blank=True, help_text="Date d'entrée effective des fonds sous séquestre.")
     created_at       = models.DateTimeField(auto_now_add=True)
     updated_at       = models.DateTimeField(auto_now=True)
+
+    @property
+    def reference(self) -> str:
+        """Référence publique lisible et stable, ex: TR-000042."""
+        return f"TR-{self.pk:06d}" if self.pk else "TR-000000"
+
+    @property
+    def buyer_name(self) -> str:
+        return self.buyer.full_name or self.buyer.get_full_name() or self.buyer.username
+
+    @property
+    def seller_name(self) -> str:
+        return self.seller.full_name or self.seller.get_full_name() or self.seller.username
+
+    @property
+    def dispute_reason(self) -> str:
+        dispute = getattr(self, "dispute", None)
+        return dispute.reason if dispute else ""
 
     @staticmethod
     def generate_delivery_otp() -> str:
@@ -157,6 +179,14 @@ class Paiement(models.Model):
             self.net_amount = amount - fee
 
     def save(self, *args, **kwargs):
+        # Applique le taux de commission configuré par l'administration aux nouveaux paiements.
+        if self._state.adding:
+            try:
+                configured_rate = PlatformSettings.get_solo().commission_rate_percent / Decimal("100")
+                if configured_rate >= 0:
+                    self.commission_rate = configured_rate
+            except Exception:
+                pass
         self.calculate_fees()
         # Copie automatique du snapshot de l'offre si renseignée
         if self.offer:
@@ -164,14 +194,32 @@ class Paiement(models.Model):
                 self.item_title = self.offer.title
             if not self.item_description:
                 self.item_description = self.offer.description
+            if not self.delivery_terms:
+                self.delivery_terms = self.offer.delivery_terms
 
         # Génération du code OTP de livraison s'il n'existe pas encore
         if not self.delivery_otp:
             self.delivery_otp = self.generate_delivery_otp()
 
-        # Dès que le paiement passe à BLOCKED, on arme le timer de 3 jours d'auto-release
+        # Horodatage de la mise sous séquestre
+        if self.status == "BLOCKED" and not self.blocked_at:
+            self.blocked_at = timezone.now()
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "blocked_at" not in update_fields:
+                kwargs["update_fields"] = list(update_fields) + ["blocked_at"]
+
+        # Dès que le paiement passe à BLOCKED, on arme le timer d'auto-release.
         if self.status == "BLOCKED" and not self.auto_release_at:
-            self.auto_release_at = timezone.now() + timedelta(days=self.AUTO_RELEASE_DELAY_DAYS)
+            delay_days = self.AUTO_RELEASE_DELAY_DAYS
+            try:
+                delay_days = PlatformSettings.get_solo().auto_release_delay_days or delay_days
+            except Exception:
+                # La table de configuration peut ne pas exister (migrations/tests isolés).
+                pass
+            self.auto_release_at = timezone.now() + timedelta(days=delay_days)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "auto_release_at" not in update_fields:
+                kwargs["update_fields"] = list(update_fields) + ["auto_release_at"]
         # Si un litige est ouvert, on suspend l'auto-release
         elif self.status == "DISPUTED":
             self.auto_release_at = None
@@ -259,6 +307,97 @@ class APIKey(models.Model):
 
     def __str__(self):
         return f"{self.user.username} — {self.name} ({self.prefix}…)"
+
+
+# ─── Portefeuille interne (dépôts / retraits Mobile Money) ────────────────────
+
+class WalletTransaction(models.Model):
+    """
+    Journal des mouvements de portefeuille.
+
+    Les dépôts et retraits Mobile Money sont volontairement créés en PENDING :
+    aucun endpoint GeniusPay de payout n'étant documenté, la plateforme ne peut
+    pas créditer/débiter automatiquement un compte externe. Un administrateur
+    (ou un webhook fournisseur) confirme ensuite le mouvement.
+    """
+
+    TYPE_CHOICES = [
+        ("TOPUP", "Rechargement"),
+        ("WITHDRAWAL", "Retrait"),
+    ]
+    METHOD_CHOICES = [
+        ("WAVE", "Wave"),
+        ("ORANGE_MONEY", "Orange Money"),
+        ("MTN_MOMO", "MTN MoMo"),
+        ("BANK_TRANSFER", "Virement bancaire"),
+    ]
+    STATUS_CHOICES = [
+        ("PENDING", "En attente"),
+        ("COMPLETED", "Terminé"),
+        ("FAILED", "Échoué"),
+    ]
+
+    user             = models.ForeignKey(User, on_delete=models.CASCADE, related_name="wallet_transactions")
+    reference        = models.CharField(max_length=32, unique=True, db_index=True, editable=False)
+    type             = models.CharField(max_length=16, choices=TYPE_CHOICES)
+    amount           = models.DecimalField(max_digits=12, decimal_places=2)
+    fee              = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    method           = models.CharField(max_length=20, choices=METHOD_CHOICES)
+    phone            = models.CharField(max_length=32, blank=True, default="")
+    beneficiary_name = models.CharField(max_length=255, blank=True, default="")
+    status           = models.CharField(max_length=12, choices=STATUS_CHOICES, default="PENDING")
+    provider_reference = models.CharField(max_length=100, blank=True, default="")
+    failure_reason   = models.CharField(max_length=255, blank=True, default="")
+    created_at       = models.DateTimeField(auto_now_add=True)
+    completed_at     = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @staticmethod
+    def generate_reference(kind: str) -> str:
+        prefix = "DEP" if kind == "TOPUP" else "RET"
+        return f"{prefix}-{secrets.token_hex(4).upper()}"
+
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            reference = self.generate_reference(self.type)
+            while WalletTransaction.objects.filter(reference=reference).exists():
+                reference = self.generate_reference(self.type)
+            self.reference = reference
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.reference} — {self.user.username} {self.type} {self.amount} ({self.status})"
+
+
+# ─── Configuration plateforme (singleton) ────────────────────────────────────
+
+class PlatformSettings(models.Model):
+    """Paramètres modifiables par l'administrateur, source de vérité côté API."""
+
+    auto_release_delay_days = models.PositiveSmallIntegerField(default=3)
+    commission_rate_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("1.00"))
+    min_escrow_amount       = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("500.00"))
+    maintenance_mode        = models.BooleanField(default=False)
+    announcement            = models.JSONField(default=dict, blank=True)
+    updated_at              = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Paramètres plateforme"
+        verbose_name_plural = "Paramètres plateforme"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls) -> "PlatformSettings":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return "Paramètres plateforme 0xSeq"
 
 
 # ─── Idempotence et Journal des Événements Webhooks ──────────────────────────
